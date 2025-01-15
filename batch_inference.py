@@ -1,8 +1,11 @@
 import json
 import os
+import re
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
+from pyexpat import model
+from turtle import mode
 from typing import Dict, List, Literal, Optional
 from uuid import uuid4
 
@@ -18,8 +21,8 @@ class Manifest:
     processedRecordCount: int
     successRecordCount: int
     errorRecordCount: int
-    inputTokenCount: int
-    outputTokenCount: int
+    inputTokenCount: Optional[int]
+    outputTokenCount: Optional[int]
 
 
 @dataclass
@@ -31,6 +34,8 @@ class ToolChoice:
 @dataclass
 class ModelInput:
     """A helper class to create model inputs"""
+
+    # https://docs.aws.amazon.com/bedrock/latest/userguide/model-parameters-anthropic-claude-messages.html#claude-messages-supported-models
 
     # These are required
     messages: List[dict]
@@ -297,30 +302,70 @@ class BatchInferer:
             raise ValueError("No response from Bedrock")
 
 
-class BatchInfererStructured(BatchInferer):
-    def __init__(self, output_model):
+class StructuredBatchInferer(BatchInferer):
+    def __init__(
+        self,
+        output_model: BaseModel,
+        model_name: str,  # this should be an enum...
+        bucket_name: str,
+        job_name: str,
+        role_arn: str,
+        max_tokens: int = 2000,
+    ):
         self.output_model = output_model
         self.tool = self._build_tool()
-        super().__init__()
+        super().__init__(model_name, bucket_name, job_name, role_arn, max_tokens)
 
-    def _build_tool(self):
-        return [
-            {
-                "name": self.output_model.__name__,
-                "description": "please fill in the schema",
-                "input_schema": self.output_model.model_json_schema(),
-            }
-        ]
+    def _build_tool(self) -> dict:
+        """convert a pydantic model into a tool defintion
+
+        Returns:
+            dict: tool description
+        """
+        return {
+            "name": self.output_model.__name__,
+            "description": self.output_model.__doc__ or "please fill in the schema",
+            "input_schema": self.output_model.model_json_schema(),
+        }
 
     def prepare_requests(self, inputs):
-        "Call the super method to prepare the requests then add the tools"
-        requests = super().prepare_requests(inputs)
-        for request in requests:
-            request["modelInput"]["tools"] = self.tool
-        return requests
+        "Add the tool then call the super method to prepare the requests"
 
-    def validate_outputs(self):
-        raise NotImplementedError("Not Implemented Yet.")
+        with_tools = {
+            id: self._add_tool_to_model_input(model_input)
+            for id, model_input in inputs.items()
+        }
+        super().prepare_requests(with_tools)
+
+    def _add_tool_to_model_input(self, model_input: ModelInput) -> ModelInput:
+        # perhaps this should be a method of the ModelInput??
+        model_input.tools = [self.tool]
+        model_input.tool_choice = ToolChoice(
+            type="tool", name=self.output_model.__name__
+        )
+        return model_input
+
+    def load_results(self):
+        # TODO: modify this to return a dict
+        super().load_results()
+        self.instances = [
+            self.validate_result(result["modelOutput"]) for result in self.results
+        ]
+
+    def validate_result(
+        self,
+        result: dict,
+    ):
+        if not result["stop_reason"] == "tool_use":
+            raise ValueError("Model did not use tool")
+        if not len(result["content"]) == 1:
+            raise ValueError("Multiple instances of tool use per execution")
+        if result["content"][0]["type"] == "tool_use":
+            try:
+                output = self.output_model(**result["content"][0]["input"])
+                return output
+            except TypeError as e:
+                raise ValueError(f"Could not validate output {e}")
 
 
 class NameAgeModel(BaseModel):
