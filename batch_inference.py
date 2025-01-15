@@ -129,7 +129,7 @@ class BatchInferer:
             else:
                 raise e
 
-    def prepare_requests(self, inputs: List[ModelInput]):
+    def prepare_requests(self, inputs: Dict[str, ModelInput]):
         "this should create the jsonl"
         # maybe a data class conforming to this???
         #  https://docs.aws.amazon.com/bedrock/latest/userguide/model-parameters-anthropic-claude-messages.html
@@ -139,15 +139,10 @@ class BatchInferer:
 
         self.requests = [
             {
-                "recordId": key,
-                "modelInput": {
-                    "anthropic_version": "bedrock-2023-05-31",
-                    "system": self.system_prompt,
-                    "max_tokens": self.max_tokens,
-                    "messages": val,
-                },
+                "recordId": id,
+                "modelInput": model_input.to_dict(),
             }
-            for key, val in inputs.items()
+            for id, model_input in inputs.items()
         ]
 
     def write_requests_locally(self):
@@ -261,7 +256,16 @@ class BatchInferer:
     def poll_progress(self, poll_interval_seconds=60):
         while not self.check_progress():
             time.sleep(poll_interval_seconds)
-        print(f"Batch {self.job_arn} ended with status ")
+        return True
+
+    def auto(self, inputs: Dict[str, ModelInput]):
+        self.prepare_requests(inputs)
+        self.push_requests_to_s3()
+        self.create()
+        self.poll_progress(10 * 60)
+        self.download_results()
+        self.load_results()
+        return self.results
 
     def recover_details_from_job_arn(job_arn):
         "I think i might need something like this to recover jobs when python has failed"
@@ -328,46 +332,34 @@ def main():
     load_dotenv()
     boto3.setup_default_session()
 
-    bi = BatchInferer.recover_details_from_job_arn(
-        "arn:aws:bedrock:eu-west-2:992382722318:model-invocation-job/onrw6s8rcdgb"
+    # Prepare your modelInputs, I think this makes it a bit easier to ensure your model
+    # inputs are correct
+    inputs = {
+        f"{i:03}": ModelInput(
+            temperature=1,
+            messages=[
+                {"role": "user", "content": "Give me a random name, occupation and age"}
+            ],
+        )
+        for i in range(0, 100, 1)
+    }
+
+    bi = BatchInferer(
+        model_name="anthropic.claude-3-haiku-20240307-v1:0",
+        job_name=f"my-first-inference-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
+        bucket_name="cddo-af-bedrock-batch-inference",
+        role_arn="arn:aws:iam::992382722318:role/BatchInferenceRole",
     )
 
-    bi.download_results()
-    bi.load_results()
+    bi.prepare_requests(inputs)
+    bi.push_requests_to_s3()
+    bi.create()
+    print(bi.job_arn)
+    bi.check_complete()
 
-    print(bi.manifest)
-    print(bi.results)
-    # model_name = "anthropic.claude-3-haiku-20240307-v1:0"
-
-    # bso = BatchInferer(
-    #     model_name,
-    #     # job_name=f"my-first-inference-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
-    #     job_name="my-first-inference-20250114-151301",
-    #     input_bucket_name="cddo-af-bedrock-batch-inference",
-    #     role_arn="arn:aws:iam::992382722318:role/BatchInferenceRole",
-    #     system_prompt="Extract the information into the schema provided",
-    # )
-
-    # # minimum data quantity is 100 rows
-    # data = {f"{i:03}": "tell me a short programming joke" for i in range(0, 100, 1)}
-
-    # # convert data to user messages
-
-    # messages = {key: [{"role": "user", "content": val}] for key, val in data.items()}
-
-    # print(type(messages))
-
-    # bso.prepare_requests(inputs=messages)
-    # print(bso.requests)
-
-    # bso.push_requests_to_s3()
-
-    # # bso.create()
-    # bso.job_arn = (
+    # bi = BatchInferer.recover_details_from_job_arn(
     #     "arn:aws:bedrock:eu-west-2:992382722318:model-invocation-job/onrw6s8rcdgb"
     # )
-
-    # bso.check_complete()
 
 
 if __name__ == "__main__":
