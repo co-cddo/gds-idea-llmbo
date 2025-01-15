@@ -254,7 +254,7 @@ class BatchInferer:
             return None
 
     def poll_progress(self, poll_interval_seconds=60):
-        while not self.check_progress():
+        while not self.check_complete():
             time.sleep(poll_interval_seconds)
         return True
 
@@ -355,6 +355,7 @@ def main():
     bi.push_requests_to_s3()
     bi.create()
     print(bi.job_arn)
+    # arn:aws:bedrock:eu-west-2:992382722318:model-invocation-job/x3ddw33feqwu
     bi.check_complete()
 
     # bi = BatchInferer.recover_details_from_job_arn(
