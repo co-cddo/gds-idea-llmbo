@@ -227,7 +227,7 @@ class BatchInferer:
             self.manifest_file_name
         ):
             self.results = self._read_jsonl(self.output_file_name)
-            self.manifest = self._read_jsonl(self.manifest_file_name)[0]
+            self.manifest = Manifest(**self._read_jsonl(self.manifest_file_name)[0])
         else:
             raise FileExistsError(
                 "Result files do not exist, you may need to call .download_results() first."
@@ -337,6 +337,7 @@ def main():
     inputs = {
         f"{i:03}": ModelInput(
             temperature=1,
+            top_k=250,
             messages=[
                 {"role": "user", "content": "Give me a random name, occupation and age"}
             ],
@@ -356,7 +357,9 @@ def main():
     bi.create()
     print(bi.job_arn)
     # arn:aws:bedrock:eu-west-2:992382722318:model-invocation-job/x3ddw33feqwu
-    bi.check_complete()
+    bi.poll_progress(10 * 60)
+    bi.download_results()
+    bi.load_results()
 
     # bi = BatchInferer.recover_details_from_job_arn(
     #     "arn:aws:bedrock:eu-west-2:992382722318:model-invocation-job/onrw6s8rcdgb"
