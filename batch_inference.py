@@ -1,10 +1,9 @@
 import json
 import os
 import time
+from dataclasses import dataclass, field
 from datetime import datetime
-from genericpath import isfile
-from select import poll
-from typing import Dict, List
+from typing import Dict, List, Literal, Optional
 from uuid import uuid4
 
 import boto3
@@ -13,26 +12,66 @@ from dotenv import load_dotenv
 from pydantic import BaseModel
 
 
+@dataclass
+class Manifest:
+    totalRecordCount: int
+    processedRecordCount: int
+    successRecordCount: int
+    errorRecordCount: int
+    inputTokenCount: int
+    outputTokenCount: int
+
+
+@dataclass
+class ToolChoice:
+    type: Literal["any", "tool", "auto"]
+    name: Optional[str] = None
+
+
+@dataclass
+class ModelInput:
+    """A helper class to create model inputs"""
+
+    # These are required
+    messages: List[dict]
+    anthropic_version: str = "bedrock-2023-05-31"
+    max_tokens: int = 2000
+
+    system: Optional[str] = None
+    stop_sequences: Optional[List[str]] | None = None
+    temperature: Optional[float] = None
+    top_p: Optional[float] = None
+    top_k: Optional[int] = None
+
+    tools: Optional[List[dict]] | None = None
+    tool_choice: Optional[ToolChoice] = None
+
+    def to_dict(self):
+        result = {k: v for k, v in self.__dict__.items() if v is not None}
+        if self.tool_choice:
+            result["tool_choice"] = self.tool_choice.__dict__
+        return result
+
+    def to_json(self):
+        return json.dumps(self.to_dict())
+
+
 class BatchInferer:
     def __init__(
         self,
-        model_name: str,  # this should be an enum...404809
-        system_prompt: str,
-        input_bucket_name: str,
+        model_name: str,  # this should be an enum...
+        bucket_name: str,
         job_name: str,
         role_arn: str,
         max_tokens: int = 2000,
     ):
         # model parameters
         self.model_name = model_name
-        self.system_prompt = (
-            system_prompt or "Extract the information into the schema provided"
-        )
         self.max_tokens = max_tokens
 
         # file/bucket parameters
-        self.bucket_name = input_bucket_name
-        self.bucket_uri = "s3://" + input_bucket_name
+        self.bucket_name = bucket_name
+        self.bucket_uri = "s3://" + bucket_name
         self.job_name = job_name or "batch_inference" + uuid4.uuid4()[:6]
         self.file_name = job_name + ".jsonl"
 
@@ -44,8 +83,14 @@ class BatchInferer:
         self._check_arn(self.role_arn)
         self.client = boto3.client("bedrock")
 
-        self.batch_id = None
+        self.job_arn = None
         self.requests = None
+
+    @property
+    def unique_id_from_arn(self):
+        if not self.job_arn:
+            raise ValueError("Job ARN not set")
+        return self.job_arn.split("/")[-1]
 
     @staticmethod
     def _check_for_profile():
@@ -84,10 +129,14 @@ class BatchInferer:
             else:
                 raise e
 
-    def prepare_requests(self, inputs: Dict[str, List]):
+    def prepare_requests(self, inputs: List[ModelInput]):
         "this should create the jsonl"
         # maybe a data class conforming to this???
         #  https://docs.aws.amazon.com/bedrock/latest/userguide/model-parameters-anthropic-claude-messages.html
+
+        if len(inputs) < 100:
+            raise ValueError("Minimum Batch Size is 100")
+
         self.requests = [
             {
                 "recordId": key,
@@ -147,56 +196,64 @@ class BatchInferer:
         if response:
             response_status = response["ResponseMetadata"]["HTTPStatusCode"]
             if response_status == 200:
-                self.batch_id = response["jobArn"]
+                self.job_arn = response["jobArn"]
                 return response
         else:
             raise RuntimeError("There was an error creating the job")
 
     def download_results(self):
-        if self.check_complete() == "COMPLETED":
+        # TODO: This maybe should all check for "Stopped" -look into this
+        valid_statuses = ["Completed"]
+        if self.check_complete() in valid_statuses:
+            file_name_, ext = os.path.splitext(self.file_name)
+            self.output_file_name = f"{file_name_}_out{ext}"
+            self.manifest_file_name = f"{file_name_}_manifest{ext}"
+
             s3_client = boto3.client("s3")
             s3_client.download_file(
-                Bucket=self.input_bucket,
-                Key=f"output/{self.file_name}",
-                Filename=f"results_{self.file_name}",
+                Bucket=self.bucket_name,
+                Key=f"output/{self.unique_id_from_arn}/{self.file_name}.out",
+                Filename=self.output_file_name,
             )
-            print("Downloaded results file")
+            print(f"Downloaded results file to {self.output_file_name}")
 
             s3_client.download_file(
-                Bucket=self.input_bucket,
-                Key="output/manifest.json.out",
-                Filename=f"{self.job_name}_manifest.json.out",
+                Bucket=self.bucket_name,
+                Key=f"output/{self.unique_id_from_arn}/manifest.json.out",
+                Filename=self.manifest_file_name,
             )
-            print("Downloaded manifest file")
+            print(f"Downloaded manifest file to {self.manifest_file_name}")
         else:
-            print("Batch was not marked COMPLETED")
+            print(f"Batch was not marked one of {valid_statuses}, could not download.")
 
     def load_results(self):
         # check the files exists
-        if os.path.isfile(f"results_{self.file_name}") and os.path.isfile(
-            f"{self.job_name}_manifest.json.out"
+        if os.path.isfile(self.output_file_name) and os.path.isfile(
+            self.manifest_file_name
         ):
-            self.results = self._read_jsonl(f"results_{self.file_name}")
-            self.manifest = self._read_jsonl(f"{self.job_name}_manifest.json.out")
+            self.results = self._read_jsonl(self.output_file_name)
+            self.manifest = self._read_jsonl(self.manifest_file_name)[0]
         else:
-            raise FileExistsError("Result files do not exist")
+            raise FileExistsError(
+                "Result files do not exist, you may need to call .download_results() first."
+            )
 
     def cancel_batch(self):
-        response = self.client.stop_model_invocation_job(jobIdentifier=self.batch_id)
+        response = self.client.stop_model_invocation_job(jobIdentifier=self.job_arn)
 
         # This should check for a status 200 I think
         if response == {}:
-            print(f"{self.job_name} with id={self.batch_id} was cancelled")
+            print(f"{self.job_name} with id={self.job_arn} was cancelled")
         else:
             raise RuntimeError("There was an error cancelling the job")
 
     def check_complete(self):
-        response = self.client.get_model_invocation_job(jobArn=self.batch_id)
+        response = self.client.get_model_invocation_job(jobIdentifier=self.job_arn)
 
         # This should be a log
         print(f"Job status {response['status']}")
 
-        if response["status"] in ["COMPLETED", "FAILED", "STOPPED", "EXPIRED"]:
+        if response["status"] in ["Completed", "Failed", "Stopped", "Expired"]:
             return response["status"]
         else:
             return None
@@ -204,7 +261,36 @@ class BatchInferer:
     def poll_progress(self, poll_interval_seconds=60):
         while not self.check_progress():
             time.sleep(poll_interval_seconds)
-        print(f"Batch {self.batch_id} ended with status ")
+        print(f"Batch {self.job_arn} ended with status ")
+
+    def recover_details_from_job_arn(job_arn):
+        "I think i might need something like this to recover jobs when python has failed"
+        client = boto3.client("bedrock")
+
+        response = client.get_model_invocation_job(jobIdentifier=job_arn)
+
+        if response:
+            assert response["ResponseMetadata"]["HTTPStatusCode"] == 200, (
+                "Didnt get a 200 response from Bedrock"
+            )
+
+            requests = BatchInferer._read_jsonl(response["jobName"] + ".jsonl")
+
+            bi = BatchInferer(
+                model_name=response["modelId"],
+                # job_name=f"my-first-inference-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
+                job_name=response["jobName"],
+                bucket_name=response["inputDataConfig"]["s3InputDataConfig"][
+                    "s3Uri"
+                ].split("/")[2],
+                role_arn=response["roleArn"],
+            )
+            bi.job_arn = job_arn
+            bi.requests = requests
+
+            return bi
+        else:
+            raise ValueError("No response from Bedrock")
 
 
 class BatchInfererStructured(BatchInferer):
@@ -242,33 +328,46 @@ def main():
     load_dotenv()
     boto3.setup_default_session()
 
-    model_name = "anthropic.claude-3-haiku-20240307-v1:0"
-
-    bso = BatchInferer(
-        model_name,
-        job_name=f"my-first-inference-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
-        input_bucket_name="cddo-af-bedrock-batch-inference",
-        role_arn="arn:aws:iam::992382722318:role/BatchInferenceRole",
-        system_prompt="Extract the information into the schema provided",
+    bi = BatchInferer.recover_details_from_job_arn(
+        "arn:aws:bedrock:eu-west-2:992382722318:model-invocation-job/onrw6s8rcdgb"
     )
 
-    # minimum data quantity is 100 rows
-    data = {f"{i:03}": "tell me a short programming joke" for i in range(0, 100, 1)}
+    bi.download_results()
+    bi.load_results()
 
-    # convert data to user messages
+    print(bi.manifest)
+    print(bi.results)
+    # model_name = "anthropic.claude-3-haiku-20240307-v1:0"
 
-    messages = {key: [{"role": "user", "content": val}] for key, val in data.items()}
+    # bso = BatchInferer(
+    #     model_name,
+    #     # job_name=f"my-first-inference-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
+    #     job_name="my-first-inference-20250114-151301",
+    #     input_bucket_name="cddo-af-bedrock-batch-inference",
+    #     role_arn="arn:aws:iam::992382722318:role/BatchInferenceRole",
+    #     system_prompt="Extract the information into the schema provided",
+    # )
 
-    print(type(messages))
+    # # minimum data quantity is 100 rows
+    # data = {f"{i:03}": "tell me a short programming joke" for i in range(0, 100, 1)}
 
-    bso.prepare_requests(inputs=messages)
-    print(bso.requests)
+    # # convert data to user messages
 
-    bso.push_requests_to_s3()
+    # messages = {key: [{"role": "user", "content": val}] for key, val in data.items()}
 
-    bso.create()
+    # print(type(messages))
 
-    bso.check_complete()
+    # bso.prepare_requests(inputs=messages)
+    # print(bso.requests)
+
+    # bso.push_requests_to_s3()
+
+    # # bso.create()
+    # bso.job_arn = (
+    #     "arn:aws:bedrock:eu-west-2:992382722318:model-invocation-job/onrw6s8rcdgb"
+    # )
+
+    # bso.check_complete()
 
 
 if __name__ == "__main__":
