@@ -16,23 +16,12 @@ permissions to execute a batch inference job. [find the link]
 
 ## Usage
 
-```python 
+See:
+- `batch_inference_example()`: for an example of free text response
+- `structured_batch_inference_example`: for an example of structured response ala instructor
 
-from batch_inferer import BatchInferer
-# assuming you have a .env as per the prerequisites 
-load_dotenv()
-boto3.setup_default_session()
-
-# Intiate the inference object
-bi = BatchInferer(
-    model_name = "anthropic.claude-3-haiku-20240307-v1:0",
-    # it is recommended to create a unique job name with a timestamp or uuid
-    job_name=f"my-first-inference-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
-    # job_name="my-first-inference-20250114-151301",
-    input_bucket_name="cddo-af-bedrock-batch-inference",
-    role_arn="arn:aws:iam::992382722318:role/BatchInferenceRole",
-    )
-
-
-
-```
+## To Do
+- example data folder
+- logging 
+- Tests 
+- `utils` module for creating the required AWS role etc.
