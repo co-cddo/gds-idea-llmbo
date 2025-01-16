@@ -1,11 +1,8 @@
 import json
 import os
-import re
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
-from pyexpat import model
-from turtle import mode
 from typing import Dict, List, Literal, Optional
 from uuid import uuid4
 
@@ -373,7 +370,7 @@ class NameAgeModel(BaseModel):
     age: int
 
 
-def main():
+def batch_inference_example():
     load_dotenv()
     boto3.setup_default_session()
 
@@ -409,6 +406,49 @@ def main():
     # bi = BatchInferer.recover_details_from_job_arn(
     #     "arn:aws:bedrock:eu-west-2:992382722318:model-invocation-job/onrw6s8rcdgb"
     # )
+
+
+def structured_batch_inference_example():
+    class NameJobAge(BaseModel):
+        """A class to store details about people and their jobs"""
+
+        first_name: str
+        last_name: str
+        age: int
+        occupation: str
+
+    sbi = StructuredBatchInferer(
+        model_name="anthropic.claude-3-haiku-20240307-v1:0",
+        job_name=f"my-first-structured-inference-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
+        bucket_name="cddo-af-bedrock-batch-inference",
+        role_arn="arn:aws:iam::992382722318:role/BatchInferenceRole",
+        output_model=NameJobAge,
+    )
+
+    names_and_that = [
+        item["modelOutput"]["content"][0]["text"]
+        for item in sbi._read_jsonl("my-first-inference-20250115-152412_out.jsonl")
+    ]
+
+    inputs = {
+        f"{index:03}": ModelInput(
+            temperature=0.1,
+            messages=[{"role": "user", "content": item}],
+        )
+        for index, item in enumerate(names_and_that)
+    }
+
+    sbi.prepare_requests(inputs)
+    sbi.push_requests_to_s3()
+    sbi.create()
+    print(sbi.job_arn)
+    sbi.poll_progress(10 * 60)
+    sbi.download_results()
+    sbi.load_results()
+
+
+def main():
+    print("hello")
 
 
 if __name__ == "__main__":
