@@ -392,18 +392,26 @@ class BatchInferer:
             )
 
             if response:
+                print(response)
                 response_status = response["ResponseMetadata"]["HTTPStatusCode"]
                 if response_status == 200:
                     self.logger.info(f"Job {self.job_name} created successfully")
                     self.logger.info(f"Assigned jobArn: {response['jobArn']}")
                     self.job_arn = response["jobArn"]
                     return response
+                else:
+                    self.logger.error(
+                        f"There was an error creating the job {self.job_name}, non 200 response from bedrock"
+                    )
+                    raise RuntimeError(
+                        f"There was an error creating the job {self.job_name}, non 200 response from bedrock"
+                    )
             else:
                 self.logger.error(
-                    f"There was an error creating the job {self.job_name}"
+                    "There was an error creating the job, no response from bedrock"
                 )
                 raise RuntimeError(
-                    f"There was an error creating the job {self.job_name}"
+                    "There was an error creating the job, no response from bedrock"
                 )
         else:
             self.logger.error("There were no prepared requests")
@@ -432,7 +440,7 @@ class BatchInferer:
             self.output_file_name = f"{file_name_}_out{ext}"
             self.manifest_file_name = f"{file_name_}_manifest{ext}"
             self.logger.info(
-                f"Job:{self.job_arn} Complete. Downloadingresults from {self.bucket_name}"
+                f"Job:{self.job_arn} Complete. Downloading results from {self.bucket_name}"
             )
             s3_client = boto3.client("s3")
             s3_client.download_file(
@@ -948,15 +956,14 @@ def setup_logging(log_level: Optional[str] = "INFO"):
 
 
 def main():
-    pass
-    # setup_logging(log_level="INFO")  # or get from environment variable
-    # logger.info("Starting batch inference process")
-    # try:
-    #     batch_inference_example()
-    #     logger.info("Successfully completed batch inference")
-    # except Exception as e:
-    #     logger.error("Batch inference failed", exc_info=True)
-    #     raise
+    setup_logging(log_level="INFO")  # or get from environment variable
+    logger.info("Starting batch inference process")
+    try:
+        batch_inference_example()
+        logger.info("Successfully completed batch inference")
+    except Exception as e:
+        logger.error("Batch inference failed", exc_info=True)
+        raise
 
 
 if __name__ == "__main__":

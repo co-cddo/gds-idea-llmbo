@@ -22,7 +22,6 @@ def mock_bedrock_client():
     mock_client.create_model_invocation_job.return_value = {
         "ResponseMetadata": {"HTTPStatusCode": 200},
         "jobArn": "arn:aws:bedrock:region:account:job/test-job",
-        "status": "Completed",
     }
 
     mock_client.get_model_invocation_job.return_value = {
@@ -166,3 +165,39 @@ def test_create_job(batch_inferer, mock_boto3_client, sample_inputs):
 
     # Verify the mock was called correctly
     mock_boto3_client("bedrock").create_model_invocation_job.assert_called_once()
+
+
+def test_create_fail_no_requests(batch_inferer):
+    """Test failure with no set requests."""
+    with pytest.raises(AttributeError):
+        batch_inferer.create()
+
+
+def test_create_fail_http_error(
+    batch_inferer,
+    mock_boto3_client,
+    sample_inputs,
+):
+    mock_boto3_client("bedrock").create_model_invocation_job.return_value = {
+        "ResponseMetadata": {"HTTPStatusCode": 400}
+    }
+
+    batch_inferer.prepare_requests(sample_inputs)
+
+    with pytest.raises(
+        RuntimeError,
+        match=r"There was an error creating the job .*, non 200 response from bedrock",
+    ):
+        batch_inferer.create()
+
+
+def test_create_fail_no_response(batch_inferer, mock_boto3_client, sample_inputs):
+    mock_boto3_client("bedrock").create_model_invocation_job.return_value = None
+
+    batch_inferer.prepare_requests(sample_inputs)
+
+    with pytest.raises(
+        RuntimeError,
+        match="There was an error creating the job, no response from bedrock",
+    ):
+        batch_inferer.create()
