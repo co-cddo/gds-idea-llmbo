@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import time
 from dataclasses import dataclass
@@ -10,6 +11,8 @@ import boto3
 from botocore.exceptions import ClientError
 from dotenv import load_dotenv
 from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -30,9 +33,13 @@ class ToolChoice:
 
 @dataclass
 class ModelInput:
-    """A helper class to create model inputs"""
+    """A data class conforming to the modelInputs as expected by AWS bedrock
 
-    # https://docs.aws.amazon.com/bedrock/latest/userguide/model-parameters-anthropic-claude-messages.html#claude-messages-supported-models
+    See https://docs.aws.amazon.com/bedrock/latest/userguide/model-parameters-anthropic-claude-messages.html
+
+    """
+
+    #
 
     # These are required
     messages: List[dict]
@@ -58,6 +65,9 @@ class ModelInput:
         return json.dumps(self.to_dict())
 
 
+VALID_FINISHED_STATUSES = ["Completed", "Failed", "Stopped", "Expired"]
+
+
 class BatchInferer:
     def __init__(
         self,
@@ -65,11 +75,13 @@ class BatchInferer:
         bucket_name: str,
         job_name: str,
         role_arn: str,
-        max_tokens: int = 2000,
+        time_out_duration_hours: int = 24,
     ):
+        self.logger = logging.getLogger(f"{__name__}.BatchInferer")
+        self.logger.info("Intialising BatchInferer")
         # model parameters
         self.model_name = model_name
-        self.max_tokens = max_tokens
+        self.time_out_duration_hours = time_out_duration_hours
 
         # file/bucket parameters
         self.bucket_name = bucket_name
@@ -81,22 +93,25 @@ class BatchInferer:
 
         # validate inputs
         # should probably check that the s3 bucket exists
-        self._check_for_profile()
+        self.check_for_profile()
         self._check_arn(self.role_arn)
         self.client = boto3.client("bedrock")
 
         self.job_arn = None
         self.requests = None
 
+        self.logger.info("Intialised BatchInferer")
+
     @property
     def unique_id_from_arn(self):
         if not self.job_arn:
+            self.logger.error("Job ARN not set")
             raise ValueError("Job ARN not set")
         return self.job_arn.split("/")[-1]
 
-    @staticmethod
-    def _check_for_profile():
+    def check_for_profile(self):
         if not os.getenv("AWS_PROFILE"):
+            self.logger.error("AWS_PROFILE environment variable not set")
             raise KeyError("AWS_PROFILE environment variable not set")
 
     @staticmethod
@@ -127,6 +142,7 @@ class BatchInferer:
             return True
         except ClientError as e:
             if e.response["Error"]["Code"] == "NoSuchEntity":
+                self.error(f"Role '{role_name}' does not exist.")
                 raise ValueError(f"Role '{role_name}' does not exist.")
             else:
                 raise e
@@ -134,10 +150,12 @@ class BatchInferer:
     def prepare_requests(self, inputs: Dict[str, ModelInput]):
         "this should create the jsonl"
         # maybe a data class conforming to this???
-        #  https://docs.aws.amazon.com/bedrock/latest/userguide/model-parameters-anthropic-claude-messages.html
+        #
 
+        self.logger.info(f"Preparing {len(inputs)} requests")
         if len(inputs) < 100:
-            raise ValueError("Minimum Batch Size is 100")
+            self.logger.error(f"Minimum Batch Size is 100, {len(inputs)} given.")
+            raise ValueError(f"Minimum Batch Size is 100, {len(inputs)} given.")
 
         self.requests = [
             {
@@ -148,6 +166,7 @@ class BatchInferer:
         ]
 
     def write_requests_locally(self):
+        self.logger.info(f"Writing {len(self.requests)} requests to {self.file_name}")
         with open(self.file_name, "w") as file:
             for record in self.requests:
                 file.write(json.dumps(record) + "\n")
@@ -158,6 +177,7 @@ class BatchInferer:
         # temp file instead
         self.write_requests_locally()
         s3_client = boto3.client("s3")
+        self.logger.info(f"Pushing {len(self.requests)} requests to {self.bucket_name}")
         response = s3_client.upload_file(
             Filename=self.file_name,
             Bucket=self.bucket_name,
@@ -167,6 +187,7 @@ class BatchInferer:
         return response
 
     def create(self):
+        self.logger.info(f"Creating job {self.job_name}")
         response = self.client.create_model_invocation_job(
             jobName=self.job_name,
             roleArn=self.role_arn,
@@ -176,52 +197,54 @@ class BatchInferer:
                 "s3InputDataConfig": {
                     "s3InputFormat": "JSONL",
                     "s3Uri": f"{self.bucket_uri}/input/{self.file_name}",
-                    # "s3BucketOwner": "string",
                 }
             },
             outputDataConfig={
                 "s3OutputDataConfig": {
                     "s3Uri": f"{self.bucket_uri}/output/",
-                    # "s3EncryptionKeyId": "string",
-                    # "s3BucketOwner": "string",
                 }
             },
-            timeoutDurationInHours=24,
+            timeoutDurationInHours=self.time_out_duration_hours,
             tags=[{"key": "bedrock_batch_inference", "value": self.job_name}],
         )
 
         if response:
             response_status = response["ResponseMetadata"]["HTTPStatusCode"]
             if response_status == 200:
+                self.logger.info(f"Job {self.job_name} created successfully")
+                self.logger.info(f"Assigned jobArn: {response['jobArn']}")
                 self.job_arn = response["jobArn"]
                 return response
         else:
-            raise RuntimeError("There was an error creating the job")
+            self.logger.error(f"There was an error creating the job {self.job_name}")
+            raise RuntimeError(f"There was an error creating the job {self.job_name}")
 
     def download_results(self):
-        # TODO: This maybe should all check for "Stopped" -look into this
-        valid_statuses = ["Completed"]
-        if self.check_complete() in valid_statuses:
+        if self.check_complete() in VALID_FINISHED_STATUSES:
             file_name_, ext = os.path.splitext(self.file_name)
             self.output_file_name = f"{file_name_}_out{ext}"
             self.manifest_file_name = f"{file_name_}_manifest{ext}"
-
+            self.logger.info(
+                f"Job:{self.job_arn} Complete. Downloadingresults from {self.bucket_name}"
+            )
             s3_client = boto3.client("s3")
             s3_client.download_file(
                 Bucket=self.bucket_name,
                 Key=f"output/{self.unique_id_from_arn}/{self.file_name}.out",
                 Filename=self.output_file_name,
             )
-            print(f"Downloaded results file to {self.output_file_name}")
+            self.logger.info(f"Downloaded results file to {self.output_file_name}")
 
             s3_client.download_file(
                 Bucket=self.bucket_name,
                 Key=f"output/{self.unique_id_from_arn}/manifest.json.out",
                 Filename=self.manifest_file_name,
             )
-            print(f"Downloaded manifest file to {self.manifest_file_name}")
+            self.logger.info(f"Downloaded manifest file to {self.manifest_file_name}")
         else:
-            print(f"Batch was not marked one of {valid_statuses}, could not download.")
+            self.logger.info(
+                f"Job:{self.job_arn} was not marked one of {VALID_FINISHED_STATUSES}, could not download."
+            )
 
     def load_results(self):
         # check the files exists
@@ -231,6 +254,9 @@ class BatchInferer:
             self.results = self._read_jsonl(self.output_file_name)
             self.manifest = Manifest(**self._read_jsonl(self.manifest_file_name)[0])
         else:
+            self.logger.error(
+                "Result files do not exist, you may need to call .download_results() first."
+            )
             raise FileExistsError(
                 "Result files do not exist, you may need to call .download_results() first."
             )
@@ -242,20 +268,26 @@ class BatchInferer:
         if response == {}:
             print(f"{self.job_name} with id={self.job_arn} was cancelled")
         else:
-            raise RuntimeError("There was an error cancelling the job")
+            self.logger.error(f"There was an error cancelling the job {self.job_name}")
+            raise RuntimeError(f"There was an error cancelling the job {self.job_name}")
 
     def check_complete(self):
-        response = self.client.get_model_invocation_job(jobIdentifier=self.job_arn)
+        if self.job_status is not VALID_FINISHED_STATUSES:
+            self.logger.info(f"Checking status of job {self.job_arn}")
+            response = self.client.get_model_invocation_job(jobIdentifier=self.job_arn)
 
-        # This should be a log
-        print(f"Job status {response['status']}")
+            self.logger.info(f"Job status is {response['status']}")
 
-        if response["status"] in ["Completed", "Failed", "Stopped", "Expired"]:
-            return response["status"]
+            if response["status"] in VALID_FINISHED_STATUSES:
+                return response["status"]
+            else:
+                return None
         else:
-            return None
+            self.logger.info(f"Job {self.job_arn} is already {self.job_status}")
+            return self.job_status
 
     def poll_progress(self, poll_interval_seconds=60):
+        self.logger.info(f"Polling for progress every {poll_interval_seconds} seconds")
         while not self.check_complete():
             time.sleep(poll_interval_seconds)
         return True
@@ -279,7 +311,6 @@ class BatchInferer:
             assert response["ResponseMetadata"]["HTTPStatusCode"] == 200, (
                 "Didnt get a 200 response from Bedrock"
             )
-
             requests = BatchInferer._read_jsonl(response["jobName"] + ".jsonl")
 
             bi = BatchInferer(
@@ -336,6 +367,7 @@ class StructuredBatchInferer(BatchInferer):
 
     def _add_tool_to_model_input(self, model_input: ModelInput) -> ModelInput:
         # perhaps this should be a method of the ModelInput??
+        self.logger.info(f"Adding tool {self.tool['name']} to model input")
         model_input.tools = [self.tool]
         model_input.tool_choice = ToolChoice(
             type="tool", name=self.output_model.__name__
@@ -354,14 +386,17 @@ class StructuredBatchInferer(BatchInferer):
         result: dict,
     ):
         if not result["stop_reason"] == "tool_use":
+            self.logger.error("Model did not use tool")
             raise ValueError("Model did not use tool")
         if not len(result["content"]) == 1:
+            self.logger.error("Multiple instances of tool use per execution")
             raise ValueError("Multiple instances of tool use per execution")
         if result["content"][0]["type"] == "tool_use":
             try:
                 output = self.output_model(**result["content"][0]["input"])
                 return output
             except TypeError as e:
+                self.logger.error(f"Could not validate output {e}")
                 raise ValueError(f"Could not validate output {e}")
 
 
@@ -397,7 +432,6 @@ def batch_inference_example():
     bi.prepare_requests(inputs)
     bi.push_requests_to_s3()
     bi.create()
-    print(bi.job_arn)
     # arn:aws:bedrock:eu-west-2:992382722318:model-invocation-job/x3ddw33feqwu
     bi.poll_progress(10 * 60)
     bi.download_results()
@@ -447,8 +481,25 @@ def structured_batch_inference_example():
     sbi.load_results()
 
 
+# Example configuration (should be done in main application entry point)
+def setup_logging(log_level: Optional[str] = "INFO"):
+    logging.basicConfig(
+        level=log_level,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+
+
 def main():
-    print("hello")
+    pass
+    # setup_logging(log_level="INFO")  # or get from environment variable
+    # logger.info("Starting batch inference process")
+    # try:
+    #     batch_inference_example()
+    #     logger.info("Successfully completed batch inference")
+    # except Exception as e:
+    #     logger.error("Batch inference failed", exc_info=True)
+    #     raise
 
 
 if __name__ == "__main__":
