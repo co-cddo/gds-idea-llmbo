@@ -146,6 +146,7 @@ class BatchInferer:
         self.time_out_duration_hours = time_out_duration_hours
 
         # file/bucket parameters
+        self._check_bucket(bucket_name)
         self.bucket_name = bucket_name
         self.bucket_uri = "s3://" + bucket_name
         self.job_name = job_name or "batch_inference" + uuid4.uuid4()[:6]
@@ -188,6 +189,27 @@ class BatchInferer:
             for line in file:
                 data.append(json.loads(line.strip()))
         return data
+
+    def _check_bucket(self, bucket_name: str) -> None:
+        """
+        Validate if the bucket_name provided exists
+
+        Args:
+            bucket_name (str): the name of a bucket
+
+        Raises:
+            ValueError: If the bucket is not accessible
+        """
+        if not bucket_name.startswith("s3://"):
+            self.logger.error("Bucket name must start with 's3://'")
+            raise ValueError("Bucket name must start with 's3://'")
+
+        try:
+            s3_client = boto3.client("s3")
+            s3_client.head_bucket(Bucket=bucket_name)
+        except ClientError as e:
+            self.logger.error(f"Bucket {bucket_name} is not accessible: {e}")
+            raise ValueError(f"Bucket {bucket_name} is not accessible")
 
     def _check_arn(self, role_arn: str):
         """Validate if an IAM role exists and is accessible.
