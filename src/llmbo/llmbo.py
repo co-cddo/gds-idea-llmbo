@@ -154,10 +154,8 @@ class BatchInferer:
         self.output_file_name = None
         self.manifest_file_name = None
 
-        # validate inputs
-        # should probably check that the s3 bucket exists
         self.check_for_profile()
-        self._check_arn(self.role_arn)
+        self._check_arn(role_arn)
         self.role_arn = role_arn
         self.client = boto3.client("bedrock")
 
@@ -200,9 +198,9 @@ class BatchInferer:
         Raises:
             ValueError: If the bucket is not accessible
         """
-        if not bucket_name.startswith("s3://"):
-            self.logger.error("Bucket name must start with 's3://'")
-            raise ValueError("Bucket name must start with 's3://'")
+        # if not bucket_name.startswith("s3://"):
+        #     self.logger.error("Bucket name must start with 's3://'")
+        #     raise ValueError("Bucket name must start with 's3://'")
 
         try:
             s3_client = boto3.client("s3")
@@ -240,7 +238,7 @@ class BatchInferer:
         try:
             # Try to get the role
             iam_client.get_role(RoleName=role_name)
-            print(f"Role '{role_name}' exists.")
+            self.logger.error(f"Role '{role_name}' exists.")
             return True
         except ClientError as e:
             if e.response["Error"]["Code"] == "NoSuchEntity":
@@ -371,37 +369,45 @@ class BatchInferer:
             - Input data must be uploaded to S3 before calling this method
             - Job will timeout after self.time_out_duration_hours
         """
-        self.logger.info(f"Creating job {self.job_name}")
-        response = self.client.create_model_invocation_job(
-            jobName=self.job_name,
-            roleArn=self.role_arn,
-            clientRequestToken="string",
-            modelId=self.model_name,
-            inputDataConfig={
-                "s3InputDataConfig": {
-                    "s3InputFormat": "JSONL",
-                    "s3Uri": f"{self.bucket_uri}/input/{self.file_name}",
-                }
-            },
-            outputDataConfig={
-                "s3OutputDataConfig": {
-                    "s3Uri": f"{self.bucket_uri}/output/",
-                }
-            },
-            timeoutDurationInHours=self.time_out_duration_hours,
-            tags=[{"key": "bedrock_batch_inference", "value": self.job_name}],
-        )
+        if self.requests:
+            self.logger.info(f"Creating job {self.job_name}")
+            response = self.client.create_model_invocation_job(
+                jobName=self.job_name,
+                roleArn=self.role_arn,
+                clientRequestToken="string",
+                modelId=self.model_name,
+                inputDataConfig={
+                    "s3InputDataConfig": {
+                        "s3InputFormat": "JSONL",
+                        "s3Uri": f"{self.bucket_uri}/input/{self.file_name}",
+                    }
+                },
+                outputDataConfig={
+                    "s3OutputDataConfig": {
+                        "s3Uri": f"{self.bucket_uri}/output/",
+                    }
+                },
+                timeoutDurationInHours=self.time_out_duration_hours,
+                tags=[{"key": "bedrock_batch_inference", "value": self.job_name}],
+            )
 
-        if response:
-            response_status = response["ResponseMetadata"]["HTTPStatusCode"]
-            if response_status == 200:
-                self.logger.info(f"Job {self.job_name} created successfully")
-                self.logger.info(f"Assigned jobArn: {response['jobArn']}")
-                self.job_arn = response["jobArn"]
-                return response
+            if response:
+                response_status = response["ResponseMetadata"]["HTTPStatusCode"]
+                if response_status == 200:
+                    self.logger.info(f"Job {self.job_name} created successfully")
+                    self.logger.info(f"Assigned jobArn: {response['jobArn']}")
+                    self.job_arn = response["jobArn"]
+                    return response
+            else:
+                self.logger.error(
+                    f"There was an error creating the job {self.job_name}"
+                )
+                raise RuntimeError(
+                    f"There was an error creating the job {self.job_name}"
+                )
         else:
-            self.logger.error(f"There was an error creating the job {self.job_name}")
-            raise RuntimeError(f"There was an error creating the job {self.job_name}")
+            self.logger.error("There were no prepared requests")
+            raise AttributeError("There were no prepared requests")
 
     def download_results(self) -> None:
         """Download batch inference results from S3.

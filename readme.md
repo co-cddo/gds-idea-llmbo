@@ -1,4 +1,4 @@
-# Batch Inference
+# LLMbo - Large language model batch operations
 
 A library to make working with batch inference of LLM call in AWS easier. 
 Currently support is limited to Anthropic models.
@@ -20,8 +20,15 @@ See:
 - `batch_inference_example()`: for an example of free text response
 - `structured_batch_inference_example`: for an example of structured response ala instructor
 
+
+## Developing 
+
+To install the dev and test dependencies:
+```
+pip install -e ".[test,dev]" 
+```
+
 ## To Do
 - example data folder
-- logging 
 - Tests 
 - `utils` module for creating the required AWS role etc.
