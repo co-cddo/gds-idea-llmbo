@@ -127,12 +127,14 @@ class BatchInferer:
             ValueError: If the provided role_arn doesn't exist or is invalid
 
         Example:
+        ```python
             >>> bi = BatchInferer(
-            ...     model_name="anthropic.claude-3-haiku-20240307-v1:0",
-            ...     bucket_name="my-inference-bucket",
-            ...     job_name="batch-job-2024-01-01",
-            ...     role_arn="arn:aws:iam::123456789012:role/BedrockBatchRole"
-            ... )
+                    model_name="anthropic.claude-3-haiku-20240307-v1:0",
+                    bucket_name="my-inference-bucket",
+                    job_name="batch-job-2024-01-01",
+                    role_arn="arn:aws:iam::123456789012:role/BedrockBatchRole"
+                )
+        ```
 
         Note:
             - Requires valid AWS credentials and configuration
@@ -492,7 +494,7 @@ class BatchInferer:
                 "Result files do not exist, you may need to call .download_results() first."
             )
 
-    def cancel_batch(self):
+    def cancel_batch(self) -> None:
         """Cancel a running batch inference job.
 
         Attempts to stop the currently running batch inference job identified by self.job_arn.

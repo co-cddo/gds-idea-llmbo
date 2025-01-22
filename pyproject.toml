@@ -22,6 +22,9 @@ test = [
 ]
 dev = [
     "mypy>=1.0.0",
+    "mkdocs",
+    "mkdocs-material",
+    "mkdocstrings[python]",
 ]
 
 [build-system]
