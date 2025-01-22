@@ -963,7 +963,7 @@ def main():
     try:
         batch_inference_example()
         logger.info("Successfully completed batch inference")
-    except Exception as e:
+    except Exception:
         logger.error("Batch inference failed", exc_info=True)
         raise
 
