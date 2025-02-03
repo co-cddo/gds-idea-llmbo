@@ -174,7 +174,7 @@ class BatchInferer:
         self.manifest = None
         self.requests = None
 
-        self.logger.info("Intialised BatchInferer")
+        self.logger.info("Initialized BatchInferer")
 
     @property
     def unique_id_from_arn(self):
@@ -246,7 +246,7 @@ class BatchInferer:
         try:
             # Try to get the role
             iam_client.get_role(RoleName=role_name)
-            self.logger.error(f"Role '{role_name}' exists.")
+            self.logger.info(f"Role '{role_name}' exists.")
             return True
         except ClientError as e:
             if e.response["Error"]["Code"] == "NoSuchEntity":
@@ -400,7 +400,6 @@ class BatchInferer:
             )
 
             if response:
-                print(response)
                 response_status = response["ResponseMetadata"]["HTTPStatusCode"]
                 if response_status == 200:
                     self.logger.info(f"Job {self.job_name} created successfully")
@@ -585,7 +584,9 @@ class BatchInferer:
         return self.results
 
     @classmethod
-    def recover_details_from_job_arn(cls, job_arn: str) -> "BatchInferer":
+    def recover_details_from_job_arn(
+        cls, job_arn: str, region_name: str
+    ) -> "BatchInferer":
         """Recover a BatchInferer instance from an existing job ARN.
 
         Used to reconstruct a BatchInferer object when the original Python process
@@ -611,8 +612,8 @@ class BatchInferer:
         if not job_arn.startswith("arn:aws:bedrock:"):
             cls.logger.error(f"Invalid Bedrock ARN format: {job_arn}")
             raise ValueError(f"Invalid Bedrock ARN format: {job_arn}")
-
-        client = self.session.client("bedrock")
+        session = boto3.Session()
+        client = session("bedrock", region_name=region_name)
 
         try:
             response = client.get_model_invocation_job(jobIdentifier=job_arn)
@@ -881,6 +882,10 @@ class NameAgeModel(BaseModel):
 
 
 def batch_inference_example():
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+    )
+
     load_dotenv()
     boto3.setup_default_session()
 
@@ -900,7 +905,8 @@ def batch_inference_example():
     bi = BatchInferer(
         model_name="anthropic.claude-3-haiku-20240307-v1:0",
         job_name=f"my-first-inference-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
-        bucket_name="cddo-af-bedrock-batch-inference",
+        region="us-east-1",
+        bucket_name="cddo-af-bedrock-batch-inference-us-east-1",
         role_arn="arn:aws:iam::992382722318:role/BatchInferenceRole",
     )
 
@@ -911,10 +917,7 @@ def batch_inference_example():
     bi.poll_progress(10 * 60)
     bi.download_results()
     bi.load_results()
-
-    # bi = BatchInferer.recover_details_from_job_arn(
-    #     "arn:aws:bedrock:eu-west-2:992382722318:model-invocation-job/onrw6s8rcdgb"
-    # )
+    print("success")
 
 
 def structured_batch_inference_example():
@@ -929,6 +932,7 @@ def structured_batch_inference_example():
     sbi = StructuredBatchInferer(
         model_name="anthropic.claude-3-haiku-20240307-v1:0",
         job_name=f"my-first-structured-inference-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
+        region="eu-west-2",
         bucket_name="cddo-af-bedrock-batch-inference",
         role_arn="arn:aws:iam::992382722318:role/BatchInferenceRole",
         output_model=NameJobAge,
@@ -977,4 +981,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    batch_inference_example()
