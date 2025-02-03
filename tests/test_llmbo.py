@@ -62,39 +62,42 @@ def sample_inputs():
 
 
 @pytest.fixture
-def mock_boto3_client(mock_bedrock_client, mock_s3_client, mock_iam_client):
+def mock_boto3_session(mock_bedrock_client, mock_s3_client, mock_iam_client):
     """Create a mock boto3 client that returns appropriate service clients."""
-    with patch("boto3.client") as mock_boto3_client:
+    with patch("boto3.Session") as mock_session:
+        mock_session_instance = mock_session.return_value
 
-        def mock_client(service_name):
+        def mock_client(service_name, region_name=None):
             return {
                 "bedrock": mock_bedrock_client,
                 "s3": mock_s3_client,
                 "iam": mock_iam_client,
             }.get(service_name, MagicMock())
 
-        mock_boto3_client.side_effect = mock_client
-        yield mock_boto3_client
+        mock_session_instance.client.side_effect = mock_client
+        yield mock_session
 
 
 @pytest.fixture
-def batch_inferer(mock_boto3_client):
+def batch_inferer(mock_boto3_session):
     """Create a configured BatchInferer instance for testing."""
     return BatchInferer(
         model_name="test-model",
         bucket_name="test-bucket",
+        region="test-region",
         job_name="test-job",
         role_arn="arn:aws:iam::123456789012:role/TestRole",
     )
 
 
-def test_init(mock_boto3_client):
+def test_init(mock_boto3_session):
     """Test BatchInferer initialisation."""
 
     inputs = {
         "model_name": "test-model",
         "bucket_name": "test-bucket",
         "job_name": "test-job",
+        "region": "test-region",
         "role_arn": "arn:aws:iam::123456789012:role/TestRole",
     }
     bi = BatchInferer(**inputs)
@@ -104,14 +107,15 @@ def test_init(mock_boto3_client):
     assert bi.bucket_name == inputs["bucket_name"]
     assert bi.job_name == inputs["job_name"]
     assert bi.role_arn == inputs["role_arn"]
+    assert bi.region == inputs["region"]
 
     # Test S3 bucket check was called
-    mock_boto3_client("s3").head_bucket.assert_called_once_with(
+    mock_boto3_session.return_value.client("s3").head_bucket.assert_called_once_with(
         Bucket=inputs["bucket_name"]
     )
 
     # Test IAM role check was called
-    mock_boto3_client("iam").get_role.assert_called_once_with(
+    mock_boto3_session.return_value.client("iam").get_role.assert_called_once_with(
         RoleName=inputs["role_arn"].split("/")[-1]  # Should be "TestRole"
     )
 
@@ -126,9 +130,10 @@ def test_init(mock_boto3_client):
     assert bi.bucket_uri == f"s3://{inputs['bucket_name']}"
     assert bi.file_name == f"{inputs['job_name']}.jsonl"
 
-    # Test that boto3.client was called for each service
-    mock_boto3_client.assert_has_calls(
-        [call("s3"), call("iam"), call("bedrock")], any_order=True
+    # Test that boto3.Session().client was called for each service
+    mock_boto3_session.return_value.client.assert_has_calls(
+        [call("s3"), call("iam"), call("bedrock", region_name=inputs["region"])],
+        any_order=True,
     )
 
 
@@ -154,7 +159,7 @@ def test_prepare_requests_bad_batch_size(batch_inferer, sample_inputs):
         batch_inferer.prepare_requests(small_inputs)
 
 
-def test_create_job(batch_inferer, mock_boto3_client, sample_inputs):
+def test_create_job(batch_inferer, sample_inputs):
     """Test job creation with mocked AWS clients."""
     batch_inferer.prepare_requests(sample_inputs)
     response = batch_inferer.create()
@@ -163,8 +168,8 @@ def test_create_job(batch_inferer, mock_boto3_client, sample_inputs):
     assert response["ResponseMetadata"]["HTTPStatusCode"] == 200
     assert batch_inferer.job_arn is not None
 
-    # Verify the mock was called correctly
-    mock_boto3_client("bedrock").create_model_invocation_job.assert_called_once()
+    # Check the corect function was called
+    batch_inferer.client.create_model_invocation_job.assert_called_once()
 
 
 def test_create_fail_no_requests(batch_inferer):
@@ -175,10 +180,9 @@ def test_create_fail_no_requests(batch_inferer):
 
 def test_create_fail_http_error(
     batch_inferer,
-    mock_boto3_client,
     sample_inputs,
 ):
-    mock_boto3_client("bedrock").create_model_invocation_job.return_value = {
+    batch_inferer.client.create_model_invocation_job.return_value = {
         "ResponseMetadata": {"HTTPStatusCode": 400}
     }
 
@@ -191,8 +195,8 @@ def test_create_fail_http_error(
         batch_inferer.create()
 
 
-def test_create_fail_no_response(batch_inferer, mock_boto3_client, sample_inputs):
-    mock_boto3_client("bedrock").create_model_invocation_job.return_value = None
+def test_create_fail_no_response(batch_inferer, sample_inputs):
+    batch_inferer.client.create_model_invocation_job.return_value = None
 
     batch_inferer.prepare_requests(sample_inputs)
 

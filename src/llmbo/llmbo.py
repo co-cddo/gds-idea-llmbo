@@ -106,6 +106,7 @@ class BatchInferer:
         self,
         model_name: str,  # this should be an enum...
         bucket_name: str,
+        region: str,
         job_name: str,
         role_arn: str,
         time_out_duration_hours: int = 24,
@@ -118,6 +119,7 @@ class BatchInferer:
         Args:
             model_name (str): The AWS Bedrock model identifier (e.g., 'anthropic.claude-3-haiku-20240307-v1:0')
             bucket_name (str): Name of the S3 bucket for storing job inputs and outputs
+            region (str): The region containing the llm to call, must match the bucket region
             job_name (str): Unique identifier for this batch job. Used in file naming.
             role_arn (str): AWS IAM role ARN with permissions for Bedrock and S3 access
             time_out_duration_hours (int, optional): Maximum runtime for the batch job. Defaults to 24 hours.
@@ -147,6 +149,8 @@ class BatchInferer:
         self.model_name = model_name
         self.time_out_duration_hours = time_out_duration_hours
 
+        self.session = boto3.Session()
+
         # file/bucket parameters
         self._check_bucket(bucket_name)
         self.bucket_name = bucket_name
@@ -159,7 +163,9 @@ class BatchInferer:
         self.check_for_profile()
         self._check_arn(role_arn)
         self.role_arn = role_arn
-        self.client = boto3.client("bedrock")
+        self.region = region
+
+        self.client = self.session.client("bedrock", region_name=region)
 
         # internal state - created by the class later.
         self.job_arn = None
@@ -205,10 +211,10 @@ class BatchInferer:
         #     raise ValueError("Bucket name must start with 's3://'")
 
         try:
-            s3_client = boto3.client("s3")
+            s3_client = self.session.client("s3")
             s3_client.head_bucket(Bucket=bucket_name)
         except ClientError as e:
-            self.logger.error(f"Bucket {bucket_name} is not accessible: {e}")
+            self.logger.error(f"Bucket {bucket_name} is not accessible: {e} 8h")
             raise ValueError(f"Bucket {bucket_name} is not accessible")
 
     def _check_arn(self, role_arn: str):
@@ -235,7 +241,7 @@ class BatchInferer:
         # Extract the role name from the ARN
         role_name = role_arn.split("/")[-1]
 
-        iam_client = boto3.client("iam")
+        iam_client = self.session.client("iam")
 
         try:
             # Try to get the role
@@ -342,7 +348,7 @@ class BatchInferer:
         # do I want to write this file locally? - maybe stream it or write it to
         # temp file instead
         self._write_requests_locally()
-        s3_client = boto3.client("s3")
+        s3_client = self.session.client("s3")
         self.logger.info(f"Pushing {len(self.requests)} requests to {self.bucket_name}")
         response = s3_client.upload_file(
             Filename=self.file_name,
@@ -444,7 +450,7 @@ class BatchInferer:
             self.logger.info(
                 f"Job:{self.job_arn} Complete. Downloading results from {self.bucket_name}"
             )
-            s3_client = boto3.client("s3")
+            s3_client = self.session.client("s3")
             s3_client.download_file(
                 Bucket=self.bucket_name,
                 Key=f"output/{self.unique_id_from_arn}/{self.file_name}.out",
@@ -606,7 +612,7 @@ class BatchInferer:
             cls.logger.error(f"Invalid Bedrock ARN format: {job_arn}")
             raise ValueError(f"Invalid Bedrock ARN format: {job_arn}")
 
-        client = boto3.client("bedrock")
+        client = self.session.client("bedrock")
 
         try:
             response = client.get_model_invocation_job(jobIdentifier=job_arn)
@@ -683,6 +689,7 @@ class StructuredBatchInferer(BatchInferer):
         self,
         output_model: BaseModel,
         model_name: str,  # this should be an enum...
+        region: str,
         bucket_name: str,
         job_name: str,
         role_arn: str,
@@ -697,6 +704,7 @@ class StructuredBatchInferer(BatchInferer):
             output_model (BaseModel): Pydantic model class defining the expected output structure
             model_name (str): The AWS Bedrock model identifier
             bucket_name (str): Name of the S3 bucket for storing job inputs and outputs
+            region (str): Region of the LLM must match the bucket
             job_name (str): Unique identifier for this batch job
             role_arn (str): AWS IAM role ARN with permissions for Bedrock and S3 access
 
