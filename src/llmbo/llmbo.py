@@ -149,13 +149,13 @@ class BatchInferer:
         self.model_name = model_name
         self.time_out_duration_hours = time_out_duration_hours
 
-        self.session = boto3.Session()
+        self.session: boto3.Session = boto3.Session()
 
         # file/bucket parameters
-        self._check_bucket(bucket_name)
+        self._check_bucket(bucket_name, region)
         self.bucket_name = bucket_name
         self.bucket_uri = "s3://" + bucket_name
-        self.job_name = job_name or "batch_inference" + uuid4.uuid4()[:6]
+        self.job_name = job_name or "batch_inference_" + uuid4.uuid4()[:6]
         self.file_name = job_name + ".jsonl"
         self.output_file_name = None
         self.manifest_file_name = None
@@ -165,7 +165,7 @@ class BatchInferer:
         self.role_arn = role_arn
         self.region = region
 
-        self.client = self.session.client("bedrock", region_name=region)
+        self.client: boto3.client = self.session.client("bedrock", region_name=region)
 
         # internal state - created by the class later.
         self.job_arn = None
@@ -196,26 +196,57 @@ class BatchInferer:
                 data.append(json.loads(line.strip()))
         return data
 
-    def _check_bucket(self, bucket_name: str) -> None:
+    def _get_bucket_location(self, bucket_name: str) -> str:
         """
-        Validate if the bucket_name provided exists
+        get the location of the s3 bucket
 
         Args:
             bucket_name (str): the name of a bucket
 
         Raises:
             ValueError: If the bucket is not accessible
-        """
-        # if not bucket_name.startswith("s3://"):
-        #     self.logger.error("Bucket name must start with 's3://'")
-        #     raise ValueError("Bucket name must start with 's3://'")
 
+        Returns:
+            str: a region, e.g. "eu-west-2"
+        """
+        try:
+            s3_client = self.session.client("s3")
+            response = s3_client.get_bucket_location(Bucket=bucket_name)
+
+            if response:
+                region = response["LocationConstraint"]
+                # aws returns None if the region is us-east-1 otherwise it returns the region
+                return region if region else "us-east-1"
+        except ClientError as e:
+            self.logger.error(f"Bucket {bucket_name} is not accessible: {e}")
+            raise ValueError(f"Bucket {bucket_name} is not accessible")
+
+    def _check_bucket(self, bucket_name: str, region: str) -> None:
+        """
+        Validate if the bucket_name provided exists
+
+        Args:
+            bucket_name (str): the name of a bucket
+            region (str): the name of a region
+
+        Raises:
+            ValueError: If the bucket is not accessible
+            ValueError: If the bucket is not in the same region as the LLM.
+        """
         try:
             s3_client = self.session.client("s3")
             s3_client.head_bucket(Bucket=bucket_name)
         except ClientError as e:
-            self.logger.error(f"Bucket {bucket_name} is not accessible: {e} 8h")
+            self.logger.error(f"Bucket {bucket_name} is not accessible: {e}")
             raise ValueError(f"Bucket {bucket_name} is not accessible")
+
+        if (bucket_region := self._get_bucket_location(bucket_name)) is not region:
+            self.logger.error(
+                f"Bucket {bucket_name} is not located in the same region [{region}] as the llm [{bucket_region}]"
+            )
+            raise ValueError(
+                f"Bucket {bucket_name} is not located in the same region [{region}] as the llm [{bucket_region}]"
+            )
 
     def _check_arn(self, role_arn: str):
         """Validate if an IAM role exists and is accessible.
