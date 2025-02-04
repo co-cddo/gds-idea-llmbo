@@ -768,7 +768,7 @@ class StructuredBatchInferer(BatchInferer):
         self.logger.info(
             f"Initialized StructuredBatchInferer with {output_model.__name__} schema"
         )
-        super().__init__(model_name, bucket_name, job_name, role_arn)
+        super().__init__(model_name, bucket_name, job_name, role_arn, region)
 
     def _build_tool(self) -> dict:
         """Convert a Pydantic model into a tool definition for the model.
