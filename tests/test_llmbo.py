@@ -47,6 +47,7 @@ def mock_s3_client():
     mock_client = MagicMock()
     mock_client.upload_file.return_value = None
     mock_client.download_file.return_value = None
+    mock_client.get_bucket_location.return_value = {"LocationConstraint": "test-region"}
     return mock_client
 
 
