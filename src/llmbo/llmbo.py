@@ -240,7 +240,7 @@ class BatchInferer:
             self.logger.error(f"Bucket {bucket_name} is not accessible: {e}")
             raise ValueError(f"Bucket {bucket_name} is not accessible")
 
-        if (bucket_region := self._get_bucket_location(bucket_name)) is not region:
+        if (bucket_region := self._get_bucket_location(bucket_name)) != region:
             self.logger.error(
                 f"Bucket {bucket_name} is not located in the same region [{region}] as the llm [{bucket_region}]"
             )
