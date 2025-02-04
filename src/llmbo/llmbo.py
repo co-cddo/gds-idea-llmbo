@@ -1012,4 +1012,4 @@ def main():
 
 
 if __name__ == "__main__":
-    batch_inference_example()
+    main()
