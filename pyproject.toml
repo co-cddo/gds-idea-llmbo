@@ -1,6 +1,6 @@
 [project]
 name = "llmbo"
-version = "0.1.0"
+version = "0.1.1"
 description = "Batch inference utility for AWS Bedrock"
 authors = [
     {name = "David Gillespie", email = "david.gillespie@digital.cabinet-office.gov.uk"},

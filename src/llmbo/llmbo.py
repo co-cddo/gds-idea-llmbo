@@ -106,6 +106,7 @@ class BatchInferer:
         self,
         model_name: str,  # this should be an enum...
         bucket_name: str,
+        region: str,
         job_name: str,
         role_arn: str,
         time_out_duration_hours: int = 24,
@@ -118,6 +119,7 @@ class BatchInferer:
         Args:
             model_name (str): The AWS Bedrock model identifier (e.g., 'anthropic.claude-3-haiku-20240307-v1:0')
             bucket_name (str): Name of the S3 bucket for storing job inputs and outputs
+            region (str): The region containing the llm to call, must match the bucket region
             job_name (str): Unique identifier for this batch job. Used in file naming.
             role_arn (str): AWS IAM role ARN with permissions for Bedrock and S3 access
             time_out_duration_hours (int, optional): Maximum runtime for the batch job. Defaults to 24 hours.
@@ -147,11 +149,13 @@ class BatchInferer:
         self.model_name = model_name
         self.time_out_duration_hours = time_out_duration_hours
 
+        self.session: boto3.Session = boto3.Session()
+
         # file/bucket parameters
-        self._check_bucket(bucket_name)
+        self._check_bucket(bucket_name, region)
         self.bucket_name = bucket_name
         self.bucket_uri = "s3://" + bucket_name
-        self.job_name = job_name or "batch_inference" + uuid4.uuid4()[:6]
+        self.job_name = job_name or "batch_inference_" + uuid4.uuid4()[:6]
         self.file_name = job_name + ".jsonl"
         self.output_file_name = None
         self.manifest_file_name = None
@@ -159,7 +163,9 @@ class BatchInferer:
         self.check_for_profile()
         self._check_arn(role_arn)
         self.role_arn = role_arn
-        self.client = boto3.client("bedrock")
+        self.region = region
+
+        self.client: boto3.client = self.session.client("bedrock", region_name=region)
 
         # internal state - created by the class later.
         self.job_arn = None
@@ -168,7 +174,7 @@ class BatchInferer:
         self.manifest = None
         self.requests = None
 
-        self.logger.info("Intialised BatchInferer")
+        self.logger.info("Initialized BatchInferer")
 
     @property
     def unique_id_from_arn(self):
@@ -190,26 +196,57 @@ class BatchInferer:
                 data.append(json.loads(line.strip()))
         return data
 
-    def _check_bucket(self, bucket_name: str) -> None:
+    def _get_bucket_location(self, bucket_name: str) -> str:
         """
-        Validate if the bucket_name provided exists
+        get the location of the s3 bucket
 
         Args:
             bucket_name (str): the name of a bucket
 
         Raises:
             ValueError: If the bucket is not accessible
-        """
-        # if not bucket_name.startswith("s3://"):
-        #     self.logger.error("Bucket name must start with 's3://'")
-        #     raise ValueError("Bucket name must start with 's3://'")
 
+        Returns:
+            str: a region, e.g. "eu-west-2"
+        """
         try:
-            s3_client = boto3.client("s3")
+            s3_client = self.session.client("s3")
+            response = s3_client.get_bucket_location(Bucket=bucket_name)
+
+            if response:
+                region = response["LocationConstraint"]
+                # aws returns None if the region is us-east-1 otherwise it returns the region
+                return region if region else "us-east-1"
+        except ClientError as e:
+            self.logger.error(f"Bucket {bucket_name} is not accessible: {e}")
+            raise ValueError(f"Bucket {bucket_name} is not accessible")
+
+    def _check_bucket(self, bucket_name: str, region: str) -> None:
+        """
+        Validate if the bucket_name provided exists
+
+        Args:
+            bucket_name (str): the name of a bucket
+            region (str): the name of a region
+
+        Raises:
+            ValueError: If the bucket is not accessible
+            ValueError: If the bucket is not in the same region as the LLM.
+        """
+        try:
+            s3_client = self.session.client("s3")
             s3_client.head_bucket(Bucket=bucket_name)
         except ClientError as e:
             self.logger.error(f"Bucket {bucket_name} is not accessible: {e}")
             raise ValueError(f"Bucket {bucket_name} is not accessible")
+
+        if (bucket_region := self._get_bucket_location(bucket_name)) is not region:
+            self.logger.error(
+                f"Bucket {bucket_name} is not located in the same region [{region}] as the llm [{bucket_region}]"
+            )
+            raise ValueError(
+                f"Bucket {bucket_name} is not located in the same region [{region}] as the llm [{bucket_region}]"
+            )
 
     def _check_arn(self, role_arn: str):
         """Validate if an IAM role exists and is accessible.
@@ -235,12 +272,12 @@ class BatchInferer:
         # Extract the role name from the ARN
         role_name = role_arn.split("/")[-1]
 
-        iam_client = boto3.client("iam")
+        iam_client = self.session.client("iam")
 
         try:
             # Try to get the role
             iam_client.get_role(RoleName=role_name)
-            self.logger.error(f"Role '{role_name}' exists.")
+            self.logger.info(f"Role '{role_name}' exists.")
             return True
         except ClientError as e:
             if e.response["Error"]["Code"] == "NoSuchEntity":
@@ -342,7 +379,7 @@ class BatchInferer:
         # do I want to write this file locally? - maybe stream it or write it to
         # temp file instead
         self._write_requests_locally()
-        s3_client = boto3.client("s3")
+        s3_client = self.session.client("s3")
         self.logger.info(f"Pushing {len(self.requests)} requests to {self.bucket_name}")
         response = s3_client.upload_file(
             Filename=self.file_name,
@@ -394,7 +431,6 @@ class BatchInferer:
             )
 
             if response:
-                print(response)
                 response_status = response["ResponseMetadata"]["HTTPStatusCode"]
                 if response_status == 200:
                     self.logger.info(f"Job {self.job_name} created successfully")
@@ -444,7 +480,7 @@ class BatchInferer:
             self.logger.info(
                 f"Job:{self.job_arn} Complete. Downloading results from {self.bucket_name}"
             )
-            s3_client = boto3.client("s3")
+            s3_client = self.session.client("s3")
             s3_client.download_file(
                 Bucket=self.bucket_name,
                 Key=f"output/{self.unique_id_from_arn}/{self.file_name}.out",
@@ -579,7 +615,9 @@ class BatchInferer:
         return self.results
 
     @classmethod
-    def recover_details_from_job_arn(cls, job_arn: str) -> "BatchInferer":
+    def recover_details_from_job_arn(
+        cls, job_arn: str, region_name: str
+    ) -> "BatchInferer":
         """Recover a BatchInferer instance from an existing job ARN.
 
         Used to reconstruct a BatchInferer object when the original Python process
@@ -605,8 +643,8 @@ class BatchInferer:
         if not job_arn.startswith("arn:aws:bedrock:"):
             cls.logger.error(f"Invalid Bedrock ARN format: {job_arn}")
             raise ValueError(f"Invalid Bedrock ARN format: {job_arn}")
-
-        client = boto3.client("bedrock")
+        session = boto3.Session()
+        client = session("bedrock", region_name=region_name)
 
         try:
             response = client.get_model_invocation_job(jobIdentifier=job_arn)
@@ -683,6 +721,7 @@ class StructuredBatchInferer(BatchInferer):
         self,
         output_model: BaseModel,
         model_name: str,  # this should be an enum...
+        region: str,
         bucket_name: str,
         job_name: str,
         role_arn: str,
@@ -697,6 +736,7 @@ class StructuredBatchInferer(BatchInferer):
             output_model (BaseModel): Pydantic model class defining the expected output structure
             model_name (str): The AWS Bedrock model identifier
             bucket_name (str): Name of the S3 bucket for storing job inputs and outputs
+            region (str): Region of the LLM must match the bucket
             job_name (str): Unique identifier for this batch job
             role_arn (str): AWS IAM role ARN with permissions for Bedrock and S3 access
 
@@ -873,6 +913,10 @@ class NameAgeModel(BaseModel):
 
 
 def batch_inference_example():
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+    )
+
     load_dotenv()
     boto3.setup_default_session()
 
@@ -892,7 +936,8 @@ def batch_inference_example():
     bi = BatchInferer(
         model_name="anthropic.claude-3-haiku-20240307-v1:0",
         job_name=f"my-first-inference-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
-        bucket_name="cddo-af-bedrock-batch-inference",
+        region="us-east-1",
+        bucket_name="cddo-af-bedrock-batch-inference-us-east-1",
         role_arn="arn:aws:iam::992382722318:role/BatchInferenceRole",
     )
 
@@ -903,10 +948,7 @@ def batch_inference_example():
     bi.poll_progress(10 * 60)
     bi.download_results()
     bi.load_results()
-
-    # bi = BatchInferer.recover_details_from_job_arn(
-    #     "arn:aws:bedrock:eu-west-2:992382722318:model-invocation-job/onrw6s8rcdgb"
-    # )
+    print("success")
 
 
 def structured_batch_inference_example():
@@ -921,6 +963,7 @@ def structured_batch_inference_example():
     sbi = StructuredBatchInferer(
         model_name="anthropic.claude-3-haiku-20240307-v1:0",
         job_name=f"my-first-structured-inference-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
+        region="eu-west-2",
         bucket_name="cddo-af-bedrock-batch-inference",
         role_arn="arn:aws:iam::992382722318:role/BatchInferenceRole",
         output_model=NameJobAge,
