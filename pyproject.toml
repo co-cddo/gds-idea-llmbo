@@ -1,37 +1,39 @@
 [project]
 name = "llmbo"
-version = "0.1.1"
-description = "Batch inference utility for AWS Bedrock"
-authors = [
-    {name = "David Gillespie", email = "david.gillespie@digital.cabinet-office.gov.uk"},
-]
-dependencies = [
-    "boto3>=1.28.0",
-    "python-dotenv>=1.0.0",
-    "pydantic>=2.0.0",
-]
-requires-python = ">=3.8"
+version = "0.1.2"
+description = "Large Language Model Batch Operations"
 readme = "README.md"
-license = {text = "MIT"}
+authors = [
+    { name = "David Gillespie", email = "david.gillespie@digital.cabinet-office.gov.uk" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "boto3>=1.36.17",
+    "pydantic>=2.10.6",
+    "python-dotenv>=1.0.1",
+]
 
-[project.optional-dependencies]
-test = [
-    "pytest>=7.0.0",
-    "pytest-cov>=4.0.0",
-    "moto>=4.0.0",
-]
-dev = [
-    "mypy>=1.0.0",
-]
-docs = [
-    "mkdocs",
-    "mkdocs-material",
-    "mkdocstrings[python]",
-]
+# [project.scripts]
+# batch-messenger = "batch_messenger:main"
 
 [build-system]
-requires = ["setuptools>=45", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/llmbo"]
+
+[dependency-groups]
+dev = [
+    "mypy>=1.15.0",
+    "pytest>=8.3.4",
+    "pytest-cov>=6.0.0",
+]
+docs = [
+    "mkdocs>=1.6.1",
+    "mkdocs-material>=9.6.3",
+    "mkdocstrings[python]>=0.28.0",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -40,4 +42,3 @@ where = ["src"]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 addopts = "-v --cov=llmbo"
-
