@@ -2,19 +2,35 @@ name: CI
 on:
   pull_request:
     branches: [main]
+    branches: [main]
   push:
+    branches: [main]
     branches: [main]
 
 jobs:
   test-python:
     runs-on: ubuntu-latest
     env:
+    env:
       AWS_PROFILE: any-profile
     strategy:
       matrix:
         python-version: ["3.10", "3.11", "3.12", "3.13"]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
 
     steps:
+      - uses: actions/checkout@v4
+      - name: Install uv and set the python version
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+      - name: Install the project
+        run: uv sync --all-extras --dev
+      - name: Run tests
+        run: uv run pytest
+      - name: Run Ruff
+        uses: chartboost/ruff-action@v1
       - uses: actions/checkout@v4
       - name: Install uv and set the python version
         uses: astral-sh/setup-uv@v5
@@ -49,23 +65,27 @@ jobs:
       - name: Upload built docs as artifact
         uses: actions/upload-artifact@v4
         with:
-          name: site
+          name: github-pages
           path: site/
 
   deploy-docs:
     needs: build-docs
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
       pages: write
+      id-token: write # Required for GitHub Pages deployment
       id-token: write # Required for GitHub Pages deployment
 
     steps:
       - name: Download built docs artifact
         uses: actions/download-artifact@v4
         with:
-          name: site
+          name: github-pages
           path: site/
 
+      - name: Deploy to GitHub Pages
+        uses: actions/deploy-pages@v4
       - name: Deploy to GitHub Pages
         uses: actions/deploy-pages@v4
