@@ -63,7 +63,6 @@ jobs:
         with:
           name: github-pages
           path: site/
-          if-no-files-found: error
 
   deploy-docs:
     needs: build-docs
