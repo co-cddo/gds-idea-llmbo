@@ -51,7 +51,7 @@ jobs:
       - name: Install dependencies
         run: uv sync --group docs
       - name: Build documentation
-        run: uv run mkdocs build --strict
+        run: uv run mkdocs build --clean --strict
       - name: Check build result
         run: |
           if [ ! -d "site" ]; then
@@ -63,6 +63,7 @@ jobs:
         with:
           name: github-pages
           path: site/
+          if-no-files-found: error
 
   deploy-docs:
     needs: build-docs
@@ -73,13 +74,17 @@ jobs:
       id-token: write # Required for GitHub Pages deployment
 
     steps:
+      - name: Remove old site directory
+        run: rm -rf site
+
       - name: Download built docs artifact
         uses: actions/download-artifact@v4
         with:
           name: github-pages
           path: site/
 
-      - name: Deploy to GitHub Pages
-        uses: actions/deploy-pages@v4
+      - name: Debug artifact contents
+        run: ls -la site/
+
       - name: Deploy to GitHub Pages
         uses: actions/deploy-pages@v4
