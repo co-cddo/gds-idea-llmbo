@@ -248,7 +248,7 @@ class BatchInferer:
                 f"Bucket {bucket_name} is not located in the same region [{region}] as the llm [{bucket_region}]"
             )
 
-    def _check_arn(self, role_arn: str):
+    def _check_arn(self, role_arn: str) -> bool:
         """Validate if an IAM role exists and is accessible.
 
         Attempts to retrieve the IAM role using the provided ARN to verify its
