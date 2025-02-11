@@ -2,20 +2,16 @@ name: CI
 on:
   pull_request:
     branches: [main]
-    branches: [main]
   push:
-    branches: [main]
     branches: [main]
 
 jobs:
   test-python:
     runs-on: ubuntu-latest
     env:
-    env:
       AWS_PROFILE: any-profile
     strategy:
       matrix:
-        python-version: ["3.10", "3.11", "3.12", "3.13"]
         python-version: ["3.10", "3.11", "3.12", "3.13"]
 
     steps:
@@ -72,10 +68,8 @@ jobs:
     needs: build-docs
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
       pages: write
-      id-token: write # Required for GitHub Pages deployment
       id-token: write # Required for GitHub Pages deployment
 
     steps:
