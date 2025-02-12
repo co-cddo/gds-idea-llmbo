@@ -903,7 +903,7 @@ class StructuredBatchInferer(BatchInferer):
     def validate_result(
         self,
         result: dict,
-    ) -> BaseModel:
+    ) -> BaseModel | None:
         """Validate and parse a single model output against the schema.
 
         Checks that the model used the specified tool correctly and validates
@@ -914,13 +914,7 @@ class StructuredBatchInferer(BatchInferer):
 
         Returns:
             BaseModel: An instance of the output_model containing the validated data
-
-        Raises:
-            ValueError: If:
-                - Model didn't use the tool
-                - Multiple tool uses were found
-                - Output doesn't match schema
-            TypeError: If output data types don't match schema
+            or None if the return could not be validated.
 
         Example:
             >>> result = {"stop_reason": "tool_use",
@@ -931,18 +925,18 @@ class StructuredBatchInferer(BatchInferer):
             'John'
         """
         if not result["stop_reason"] == "tool_use":
-            self.logger.error("Model did not use tool")
-            raise ValueError("Model did not use tool")
+            self.logger.warning("Model did not use tool")
+            return None
         if not len(result["content"]) == 1:
-            self.logger.error("Multiple instances of tool use per execution")
-            raise ValueError("Multiple instances of tool use per execution")
+            self.logger.warning("Multiple instances of tool use per execution")
+            return None
         if result["content"][0]["type"] == "tool_use":
             try:
                 output = self.output_model(**result["content"][0]["input"])
                 return output
             except TypeError as e:
-                self.logger.error(f"Could not validate output {e}")
-                raise ValueError(f"Could not validate output {e}")
+                self.logger.warning(f"Could not validate output {e}")
+                return None
 
     @override
     @classmethod
