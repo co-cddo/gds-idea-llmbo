@@ -156,7 +156,7 @@ class BatchInferer:
         self._check_bucket(bucket_name, region)
         self.bucket_name = bucket_name
         self.bucket_uri = "s3://" + bucket_name
-        self.job_name = job_name or "batch_inference_" + uuid4.uuid4()[:6]
+        self.job_name = job_name or "batch_inference_" + str(uuid4())[:6]
         self.file_name = job_name + ".jsonl"
         self.output_file_name = None
         self.manifest_file_name = None
