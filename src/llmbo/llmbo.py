@@ -938,9 +938,16 @@ class StructuredBatchInferer(BatchInferer):
                 self.logger.warning(f"Could not validate output {e}")
                 return None
 
-    @override
     @classmethod
     def recover_details_from_job_arn(
+        cls, job_arn: str, region: str
+    ) -> "StructuredBatchInferer":
+        raise TypeError(
+            "Cannot recover structured job without output_model. Use recover_structured_job instead."
+        )
+
+    @classmethod
+    def recover_structured_job(
         cls, job_arn: str, region: str, output_model: Type[BaseModel]
     ) -> "StructuredBatchInferer":
         """Recover a StructuredBatchInferer instance from an existing job ARN.
