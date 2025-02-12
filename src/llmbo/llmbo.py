@@ -891,7 +891,13 @@ class StructuredBatchInferer(BatchInferer):
         """
         super().load_results()
         self.instances = [
-            self.validate_result(result["modelOutput"]) for result in self.results
+            {
+                "recordId": result["recordId"],
+                "outputModel": self.validate_result(result["modelOutput"]),
+            }
+            if result.get("modelOutput")
+            else None
+            for result in self.results
         ]
 
     def validate_result(
