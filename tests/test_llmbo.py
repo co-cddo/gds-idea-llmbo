@@ -1,8 +1,14 @@
 from unittest.mock import MagicMock, call, patch
 
 import pytest
+from pydantic import BaseModel
 
-from llmbo import BatchInferer, ModelInput
+from llmbo import BatchInferer, ModelInput, StructuredBatchInferer
+
+
+class ExampleOutput(BaseModel):
+    name: str
+    age: int
 
 
 @pytest.fixture
@@ -206,3 +212,53 @@ def test_create_fail_no_response(batch_inferer, sample_inputs):
         match="There was an error creating the job, no response from bedrock",
     ):
         batch_inferer.create()
+
+
+def test_structured_init(mock_boto3_session):
+    """Test BatchInferer initialisation."""
+
+    inputs = {
+        "model_name": "test-model",
+        "bucket_name": "test-bucket",
+        "job_name": "test-job",
+        "region": "test-region",
+        "role_arn": "arn:aws:iam::123456789012:role/TestRole",
+        "output_model": ExampleOutput,
+    }
+    bi = StructuredBatchInferer(**inputs)
+
+    # Test attribute assignment
+    assert bi.model_name == inputs["model_name"]
+    assert bi.bucket_name == inputs["bucket_name"]
+    assert bi.job_name == inputs["job_name"]
+    assert bi.role_arn == inputs["role_arn"]
+    assert bi.region == inputs["region"]
+    assert bi.output_model == ExampleOutput
+    assert bi.tool["name"] == ExampleOutput.__name__
+
+    # Test S3 bucket check was called
+    mock_boto3_session.return_value.client("s3").head_bucket.assert_called_once_with(
+        Bucket=inputs["bucket_name"]
+    )
+
+    # Test IAM role check was called
+    mock_boto3_session.return_value.client("iam").get_role.assert_called_once_with(
+        RoleName=inputs["role_arn"].split("/")[-1]  # Should be "TestRole"
+    )
+
+    # Test internal state initialization
+    assert bi.job_arn is None
+    assert bi.job_status is None
+    assert bi.results is None
+    assert bi.manifest is None
+    assert bi.requests is None
+
+    # Test derived attributes
+    assert bi.bucket_uri == f"s3://{inputs['bucket_name']}"
+    assert bi.file_name == f"{inputs['job_name']}.jsonl"
+
+    # Test that boto3.Session().client was called for each service
+    mock_boto3_session.return_value.client.assert_has_calls(
+        [call("s3"), call("iam"), call("bedrock", region_name=inputs["region"])],
+        any_order=True,
+    )
