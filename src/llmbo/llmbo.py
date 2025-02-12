@@ -4,7 +4,7 @@ import os
 import time
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, Type, override
 from uuid import uuid4
 
 import boto3
@@ -616,16 +616,15 @@ class BatchInferer:
         return self.results
 
     @classmethod
-    def recover_details_from_job_arn(
-        cls, job_arn: str, region_name: str
-    ) -> "BatchInferer":
+    def recover_details_from_job_arn(cls, job_arn: str, region: str) -> "BatchInferer":
         """Recover a BatchInferer instance from an existing job ARN.
 
         Used to reconstruct a BatchInferer object when the original Python process
         has terminated but the AWS job is still running or complete.
 
         Args:
-            job_arn: The AWS ARN of the existing batch inference job
+            job_arn: (str) The AWS ARN of the existing batch inference job
+            region: (str) the region where the job was scheduled
 
         Returns:
             BatchInferer: A configured instance with the job's details
@@ -641,28 +640,7 @@ class BatchInferer:
         """
 
         cls.logger.info(f"Attempting to Recover BatchInferer from {job_arn}")
-        if not job_arn.startswith("arn:aws:bedrock:"):
-            cls.logger.error(f"Invalid Bedrock ARN format: {job_arn}")
-            raise ValueError(f"Invalid Bedrock ARN format: {job_arn}")
-        session = boto3.Session()
-        client = session("bedrock", region_name=region_name)
-
-        try:
-            response = client.get_model_invocation_job(jobIdentifier=job_arn)
-        except ClientError as e:
-            if e.response["Error"]["Code"] == "ResourceNotFoundException":
-                cls.logger.error(f"Job not found: {job_arn}")
-                raise ValueError(f"Job not found: {job_arn}") from e
-            cls.logger.error(f"AWS API error: {str(e)}")
-            raise RuntimeError(f"AWS API error: {str(e)}") from e
-
-        if response["ResponseMetadata"]["HTTPStatusCode"] != 200:
-            cls.logger.error(
-                f"Unexpected response status: {response['ResponseMetadata']['HTTPStatusCode']}"
-            )
-            raise RuntimeError(
-                f"Unexpected response status: {response['ResponseMetadata']['HTTPStatusCode']}"
-            )
+        response = cls.check_for_existing_job(job_arn, region)
 
         try:
             # Extract required parameters from response
@@ -684,6 +662,7 @@ class BatchInferer:
             bi = cls(
                 model_name=model_id,
                 job_name=job_name,
+                region=region,
                 bucket_name=bucket_name,
                 role_arn=role_arn,
             )
@@ -699,6 +678,46 @@ class BatchInferer:
         except Exception as e:
             cls.logger.error(f"Failed to recover job details: {str(e)}")
             raise RuntimeError(f"Failed to recover job details: {str(e)}") from e
+
+    @classmethod
+    def check_for_existing_job(cls, job_arn, region) -> Dict[str, Any]:
+        """Check if a job exists and return its details.
+
+        Args:
+            job_arn (str): The AWS ARN of the job to check
+            region (str): The AWS region where the job was created
+
+        Returns:
+            Dict[str, Any]: The job details from AWS Bedrock
+
+        Raises:
+            ValueError: If the job ARN is invalid or the job is not found
+            RuntimeError: For other AWS API errors
+        """
+        if not job_arn.startswith("arn:aws:bedrock:"):
+            cls.logger.error(f"Invalid Bedrock ARN format: {job_arn}")
+            raise ValueError(f"Invalid Bedrock ARN format: {job_arn}")
+        session = boto3.Session()
+        client = session.client("bedrock", region_name=region)
+
+        try:
+            response = client.get_model_invocation_job(jobIdentifier=job_arn)
+        except ClientError as e:
+            if e.response["Error"]["Code"] == "ResourceNotFoundException":
+                cls.logger.error(f"Job not found: {job_arn}")
+                raise ValueError(f"Job not found: {job_arn}") from e
+            cls.logger.error(f"AWS API error: {str(e)}")
+            raise RuntimeError(f"AWS API error: {str(e)}") from e
+
+        if response["ResponseMetadata"]["HTTPStatusCode"] != 200:
+            cls.logger.error(
+                f"Unexpected response status: {response['ResponseMetadata']['HTTPStatusCode']}"
+            )
+            raise RuntimeError(
+                f"Unexpected response status: {response['ResponseMetadata']['HTTPStatusCode']}"
+            )
+
+        return response
 
 
 class StructuredBatchInferer(BatchInferer):
@@ -723,7 +742,7 @@ class StructuredBatchInferer(BatchInferer):
 
     def __init__(
         self,
-        output_model: BaseModel,
+        output_model: Type[BaseModel],
         model_name: str,  # this should be an enum...
         bucket_name: str,
         region: str,
@@ -918,6 +937,75 @@ class StructuredBatchInferer(BatchInferer):
             except TypeError as e:
                 self.logger.error(f"Could not validate output {e}")
                 raise ValueError(f"Could not validate output {e}")
+
+    @override
+    @classmethod
+    def recover_details_from_job_arn(
+        cls, job_arn: str, region: str, output_model: Type[BaseModel]
+    ) -> "StructuredBatchInferer":
+        """Recover a StructuredBatchInferer instance from an existing job ARN.
+
+        Used to reconstruct a StructuredBatchInferer object when the original Python process
+        has terminated but the AWS job is still running or complete.
+
+        Args:
+            job_arn: (str) The AWS ARN of the existing batch inference job
+            region: (str) the region where the job was scheduled
+
+        Returns:
+            BatchInferer: A configured instance with the job's details
+
+        Raises:
+            ValueError: If the job cannot be found or response is invalid
+
+        Example:
+            >>> job_arn = "arn:aws:bedrock:region:account:job/xyz123"
+            >>> region = us-east-1"
+            >>> sbi = StructuredBatchInferer.recover_details_from_job_arn(job_arn, region, some_model)
+            >>> sbi.check_complete()
+            'Completed'
+        """
+
+        cls.logger.info(f"Attempting to Recover BatchInferer from {job_arn}")
+        response = cls.check_for_existing_job(job_arn, region)
+
+        try:
+            # Extract required parameters from response
+            job_name = response["jobName"]
+            model_id = response["modelId"]
+            bucket_name = response["inputDataConfig"]["s3InputDataConfig"][
+                "s3Uri"
+            ].split("/")[2]
+            role_arn = response["roleArn"]
+
+            # Validate required files exist
+            input_file = f"{job_name}.jsonl"
+            if not os.path.exists(input_file):
+                cls.logger.error(f"Required input file not found: {input_file}")
+                raise FileNotFoundError(f"Required input file not found: {input_file}")
+
+            requests = cls._read_jsonl(input_file)
+
+            sbi = cls(
+                model_name=model_id,
+                output_model=output_model,
+                job_name=job_name,
+                region=region,
+                bucket_name=bucket_name,
+                role_arn=role_arn,
+            )
+            sbi.job_arn = job_arn
+            sbi.requests = requests
+            sbi.job_status = response["status"]
+
+            return sbi
+
+        except (KeyError, IndexError) as e:
+            cls.logger.error(f"Invalid job response format: {str(e)}")
+            raise ValueError(f"Invalid job response format: {str(e)}") from e
+        except Exception as e:
+            cls.logger.error(f"Failed to recover job details: {str(e)}")
+            raise RuntimeError(f"Failed to recover job details: {str(e)}") from e
 
 
 class NameAgeModel(BaseModel):
