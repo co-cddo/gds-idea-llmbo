@@ -89,6 +89,7 @@ class BatchInferer:
     Args:
         model_name (str): The name/ID of the AWS Bedrock model to use
         bucket_name (str): The S3 bucket name for storing input/output data
+        region (str): The region to run the batch inference job in.
         job_name (str): A unique name for the batch inference job
         role_arn (str): The AWS IAM role ARN with necessary permissions
         time_out_duration_hours (int, optional): Maximum job runtime in hours. Defaults to 24.
@@ -711,8 +712,11 @@ class StructuredBatchInferer(BatchInferer):
         output_model (BaseModel): A Pydantic model defining the expected output structure
         model_name (str): The name/ID of the AWS Bedrock model to use
         bucket_name (str): The S3 bucket name for storing input/output data
+        region (str): The region to run the batch inference job in.
         job_name (str): A unique name for the batch inference job
         role_arn (str): The AWS IAM role ARN with necessary permissions
+        time_out_duration_hours (int, optional): Maximum job runtime in hours. Defaults to 24.
+
     """
 
     logger = logging.getLogger(f"{__name__}.StructuredBatchInferer")
@@ -721,10 +725,11 @@ class StructuredBatchInferer(BatchInferer):
         self,
         output_model: BaseModel,
         model_name: str,  # this should be an enum...
-        region: str,
         bucket_name: str,
+        region: str,
         job_name: str,
         role_arn: str,
+        time_out_duration_hours: int = 24,
     ):
         """Initialize a StructuredBatchInferer for schema-validated batch processing.
 
@@ -768,7 +773,15 @@ class StructuredBatchInferer(BatchInferer):
         self.logger.info(
             f"Initialized StructuredBatchInferer with {output_model.__name__} schema"
         )
-        super().__init__(model_name, bucket_name, job_name, role_arn, region)
+
+        super().__init__(
+            model_name=model_name,
+            bucket_name=bucket_name,
+            region=region,
+            job_name=job_name,
+            role_arn=role_arn,
+            time_out_duration_hours=time_out_duration_hours,
+        )
 
     def _build_tool(self) -> dict:
         """Convert a Pydantic model into a tool definition for the model.
