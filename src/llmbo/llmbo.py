@@ -93,6 +93,7 @@ class BatchInferer:
         job_name (str): A unique name for the batch inference job
         role_arn (str): The AWS IAM role ARN with necessary permissions
         time_out_duration_hours (int, optional): Maximum job runtime in hours. Defaults to 24.
+        session (boto3.session, optional): A boto3 session to be used for calls to AWS, If one if not provided a new one will be  created
 
     Attributes:
         job_arn (str): The ARN of the created batch inference job
@@ -111,6 +112,7 @@ class BatchInferer:
         job_name: str,
         role_arn: str,
         time_out_duration_hours: int = 24,
+        session: boto3.Session | None = None,
     ):
         """Initialize a BatchInferer for AWS Bedrock batch processing.
 
@@ -124,6 +126,7 @@ class BatchInferer:
             job_name (str): Unique identifier for this batch job. Used in file naming.
             role_arn (str): AWS IAM role ARN with permissions for Bedrock and S3 access
             time_out_duration_hours (int, optional): Maximum runtime for the batch job. Defaults to 24 hours.
+            session (boto3.session, optional): A boto3 session to be used for calls to AWS, If one if not provided a new one will be  created
 
         Raises:
             KeyError: If AWS_PROFILE environment variable is not set
@@ -150,7 +153,7 @@ class BatchInferer:
         self.model_name = model_name
         self.time_out_duration_hours = time_out_duration_hours
 
-        self.session: boto3.Session = boto3.Session()
+        self.session: boto3.Session = session or boto3.Session()
 
         # file/bucket parameters
         self._check_bucket(bucket_name, region)
@@ -197,7 +200,7 @@ class BatchInferer:
                 data.append(json.loads(line.strip()))
         return data
 
-    def _get_bucket_location(self, bucket_name: str) -> str:
+    def _get_bucket_location(self, bucket_name: str) -> str | None:
         """
         get the location of the s3 bucket
 
@@ -616,7 +619,9 @@ class BatchInferer:
         return self.results
 
     @classmethod
-    def recover_details_from_job_arn(cls, job_arn: str, region: str) -> "BatchInferer":
+    def recover_details_from_job_arn(
+        cls, job_arn: str, region: str, session: boto3.Session | None = None
+    ) -> "BatchInferer":
         """Recover a BatchInferer instance from an existing job ARN.
 
         Used to reconstruct a BatchInferer object when the original Python process
@@ -625,6 +630,8 @@ class BatchInferer:
         Args:
             job_arn: (str) The AWS ARN of the existing batch inference job
             region: (str) the region where the job was scheduled
+            session (boto3.session, optional): A boto3 session to be used for calls to AWS,
+                    If one if not provided a new one will be  created
 
         Returns:
             BatchInferer: A configured instance with the job's details
@@ -640,7 +647,7 @@ class BatchInferer:
         """
 
         cls.logger.info(f"Attempting to Recover BatchInferer from {job_arn}")
-        response = cls.check_for_existing_job(job_arn, region)
+        response = cls.check_for_existing_job(job_arn, region, session)
 
         try:
             # Extract required parameters from response
@@ -665,6 +672,7 @@ class BatchInferer:
                 region=region,
                 bucket_name=bucket_name,
                 role_arn=role_arn,
+                session=session,
             )
             bi.job_arn = job_arn
             bi.requests = requests
@@ -680,12 +688,16 @@ class BatchInferer:
             raise RuntimeError(f"Failed to recover job details: {str(e)}") from e
 
     @classmethod
-    def check_for_existing_job(cls, job_arn, region) -> Dict[str, Any]:
+    def check_for_existing_job(
+        cls, job_arn, region, session: boto3.Session | None = None
+    ) -> Dict[str, Any]:
         """Check if a job exists and return its details.
 
         Args:
             job_arn (str): The AWS ARN of the job to check
             region (str): The AWS region where the job was created
+            session (boto3.Session, optional): A boto3 session to be used for AWS API calls.
+                                           If not provided, a new session will be created.
 
         Returns:
             Dict[str, Any]: The job details from AWS Bedrock
@@ -697,7 +709,7 @@ class BatchInferer:
         if not job_arn.startswith("arn:aws:bedrock:"):
             cls.logger.error(f"Invalid Bedrock ARN format: {job_arn}")
             raise ValueError(f"Invalid Bedrock ARN format: {job_arn}")
-        session = boto3.Session()
+        session = session or boto3.Session()
         client = session.client("bedrock", region_name=region)
 
         try:
@@ -735,6 +747,9 @@ class StructuredBatchInferer(BatchInferer):
         job_name (str): A unique name for the batch inference job
         role_arn (str): The AWS IAM role ARN with necessary permissions
         time_out_duration_hours (int, optional): Maximum job runtime in hours. Defaults to 24.
+        session (boto3.Session, optional): A boto3 session to be used for AWS API calls.
+                                           If not provided, a new session will be created.
+
 
     """
 
@@ -749,6 +764,7 @@ class StructuredBatchInferer(BatchInferer):
         job_name: str,
         role_arn: str,
         time_out_duration_hours: int = 24,
+        session: boto3.Session | None = None,
     ):
         """Initialize a StructuredBatchInferer for schema-validated batch processing.
 
@@ -763,6 +779,8 @@ class StructuredBatchInferer(BatchInferer):
             region (str): Region of the LLM must match the bucket
             job_name (str): Unique identifier for this batch job
             role_arn (str): AWS IAM role ARN with permissions for Bedrock and S3 access
+            session (boto3.Session, optional): A boto3 session to be used for AWS API calls.
+                                           If not provided, a new session will be created.
 
         Raises:
             KeyError: If AWS_PROFILE environment variable is not set
@@ -800,6 +818,7 @@ class StructuredBatchInferer(BatchInferer):
             job_name=job_name,
             role_arn=role_arn,
             time_out_duration_hours=time_out_duration_hours,
+            session=session,
         )
 
     def _build_tool(self) -> dict:
@@ -940,7 +959,10 @@ class StructuredBatchInferer(BatchInferer):
 
     @classmethod
     def recover_details_from_job_arn(
-        cls, job_arn: str, region: str
+        cls,
+        job_arn: str,
+        region: str,
+        session: boto3.Session | None = None,
     ) -> "StructuredBatchInferer":
         raise TypeError(
             "Cannot recover structured job without output_model. Use recover_structured_job instead."
@@ -948,7 +970,11 @@ class StructuredBatchInferer(BatchInferer):
 
     @classmethod
     def recover_structured_job(
-        cls, job_arn: str, region: str, output_model: Type[BaseModel]
+        cls,
+        job_arn: str,
+        region: str,
+        output_model: Type[BaseModel],
+        session: boto3.Session | None = None,
     ) -> "StructuredBatchInferer":
         """Recover a StructuredBatchInferer instance from an existing job ARN.
 
@@ -958,9 +984,12 @@ class StructuredBatchInferer(BatchInferer):
         Args:
             job_arn: (str) The AWS ARN of the existing batch inference job
             region: (str) the region where the job was scheduled
+            output_model: (Type[BaseModel]) A pydantic model describing the required output
+            session (boto3.Session, optional): A boto3 session to be used for AWS API calls.
+                                           If not provided, a new session will be created.
 
         Returns:
-            BatchInferer: A configured instance with the job's details
+            StructuredBatchInferer: A configured instance with the job's details
 
         Raises:
             ValueError: If the job cannot be found or response is invalid
@@ -974,7 +1003,7 @@ class StructuredBatchInferer(BatchInferer):
         """
 
         cls.logger.info(f"Attempting to Recover BatchInferer from {job_arn}")
-        response = cls.check_for_existing_job(job_arn, region)
+        response = cls.check_for_existing_job(job_arn, region, session)
 
         try:
             # Extract required parameters from response
@@ -1000,6 +1029,7 @@ class StructuredBatchInferer(BatchInferer):
                 region=region,
                 bucket_name=bucket_name,
                 role_arn=role_arn,
+                session=session,
             )
             sbi.job_arn = job_arn
             sbi.requests = requests

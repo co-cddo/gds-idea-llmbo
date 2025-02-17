@@ -1,6 +1,6 @@
 [project]
 name = "llmbo"
-version = "0.1.4"
+version = "0.1.5"
 description = "Large Language Model Batch Operations"
 readme = "README.md"
 authors = [
