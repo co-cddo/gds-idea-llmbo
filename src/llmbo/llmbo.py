@@ -1084,7 +1084,6 @@ def batch_inference_example():
     bi.prepare_requests(inputs)
     bi.push_requests_to_s3()
     bi.create()
-    # arn:aws:bedrock:eu-west-2:992382722318:model-invocation-job/x3ddw33feqwu
     bi.poll_progress(10 * 60)
     bi.download_results()
     bi.load_results()
