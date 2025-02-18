@@ -7,7 +7,7 @@ LLMbo aims to solve these problems by providing an intuitive, Pythonic interface
 Additionally, it provides a method of using batch inference for structured responses, 
 taking inspiration from the likes of [instructor](https://pypi.org/project/instructor/), [mirascope](https://pypi.org/project/mirascope/) and [pydanticai](https://pypi.org/project/pydantic-ai/). You provide a model output as a pydantic model and llmbo creates takes care of the rest.
 
-Currently the library has only been texted with compatible Anthropic models. See the AWS
+Currently the library has only been tested with compatible Anthropic models. See the AWS
 documentation for [models that support batch inference.](https://docs.aws.amazon.com/bedrock/latest/userguide/batch-inference-supported.html)
 
 ## Prerequisites 

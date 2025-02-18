@@ -7,6 +7,9 @@ LLMbo aims to solve these problems by providing an intuitive, Pythonic interface
 Additionally, it provides a method of using batch inference for structured responses, 
 taking inspiration from the likes of [instructor](https://pypi.org/project/instructor/), [mirascope](https://pypi.org/project/mirascope/) and [pydanticai](https://pypi.org/project/pydantic-ai/). You provide a model output as a pydantic model and llmbo creates takes care of the rest.
 
+Currently the library has only been texted with compatible Anthropic models. See the AWS
+documentation for [models that support batch inference.](https://docs.aws.amazon.com/bedrock/latest/userguide/batch-inference-supported.html)
+
 ## Prerequisites 
 
 - A `.env` file with an entry for `AWS_PROFILE=`. This profile should have sufficient 
@@ -17,6 +20,9 @@ permissions to create and schedule a batch inference job. See the [AWS instructi
     - Outputs will be written to `f{s3_bucket}/output/{job_id}/{job_name}.jsonl.out` and 
       `f{s3_bucket}/output/{job_id}/manifest.json.out`
 
+## Documentation
+
+[See the full documentation.](https://co-cddo.github.io/gds-idea-llmbo/)
 
 ## Install
 ```bash 
