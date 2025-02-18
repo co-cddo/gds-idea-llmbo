@@ -647,6 +647,7 @@ class BatchInferer:
         """
 
         cls.logger.info(f"Attempting to Recover BatchInferer from {job_arn}")
+        session = session or boto3.Session()
         response = cls.check_for_existing_job(job_arn, region, session)
 
         try:
@@ -1003,6 +1004,7 @@ class StructuredBatchInferer(BatchInferer):
         """
 
         cls.logger.info(f"Attempting to Recover BatchInferer from {job_arn}")
+        session = session or boto3.Session()
         response = cls.check_for_existing_job(job_arn, region, session)
 
         try:
