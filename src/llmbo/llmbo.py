@@ -647,6 +647,7 @@ class BatchInferer:
         """
 
         cls.logger.info(f"Attempting to Recover BatchInferer from {job_arn}")
+        session = session or boto3.Session()
         response = cls.check_for_existing_job(job_arn, region, session)
 
         try:
@@ -1003,6 +1004,7 @@ class StructuredBatchInferer(BatchInferer):
         """
 
         cls.logger.info(f"Attempting to Recover BatchInferer from {job_arn}")
+        session = session or boto3.Session()
         response = cls.check_for_existing_job(job_arn, region, session)
 
         try:
@@ -1082,7 +1084,6 @@ def batch_inference_example():
     bi.prepare_requests(inputs)
     bi.push_requests_to_s3()
     bi.create()
-    # arn:aws:bedrock:eu-west-2:992382722318:model-invocation-job/x3ddw33feqwu
     bi.poll_progress(10 * 60)
     bi.download_results()
     bi.load_results()

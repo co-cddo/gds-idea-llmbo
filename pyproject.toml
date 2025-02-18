@@ -1,6 +1,6 @@
 [project]
-name = "llmbo"
-version = "0.1.5"
+name = "llmbo-bedrock"
+version = "0.1.6"
 description = "Large Language Model Batch Operations"
 readme = "README.md"
 authors = [
@@ -13,9 +13,6 @@ dependencies = [
     "python-dotenv>=1.0.1",
 ]
 
-# [project.scripts]
-# batch-messenger = "batch_messenger:main"
-
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
@@ -25,9 +22,11 @@ packages = ["src/llmbo"]
 
 [dependency-groups]
 dev = [
+    "hatch>=1.14.0",
     "mypy>=1.15.0",
     "pytest>=8.3.4",
     "pytest-cov>=6.0.0",
+    "twine>=6.1.0",
 ]
 docs = [
     "mkdocs>=1.6.1",
