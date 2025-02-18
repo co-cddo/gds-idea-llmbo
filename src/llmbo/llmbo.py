@@ -10,7 +10,7 @@ from uuid import uuid4
 import boto3
 from botocore.exceptions import ClientError
 from dotenv import load_dotenv
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 logger = logging.getLogger(__name__)
 
@@ -946,17 +946,23 @@ class StructuredBatchInferer(BatchInferer):
             'John'
         """
         if not result["stop_reason"] == "tool_use":
-            self.logger.warning("Model did not use tool")
+            self.logger.warning("Validation warning: Model did not use tool")
             return None
-        if not len(result["content"]) == 1:
-            self.logger.warning("Multiple instances of tool use per execution")
+        if result.get("content", []) == []:
+            self.logger.warning("Validation warning: No content found in response")
+        if not len(result.get("content", [])) == 1:
+            self.logger.warning(
+                "Validation warning: Multiple instances of tool use per execution"
+            )
             return None
         if result["content"][0]["type"] == "tool_use":
             try:
                 output = self.output_model(**result["content"][0]["input"])
                 return output
-            except TypeError as e:
-                self.logger.warning(f"Could not validate output {e}")
+            except ValidationError as e:
+                self.logger.warning(
+                    f"Validation warning: Could not validate output {e}"
+                )
                 return None
 
     @classmethod
