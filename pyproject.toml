@@ -1,6 +1,6 @@
 [project]
 name = "llmbo-bedrock"
-version = "0.1.6"
+version = "0.1.7"
 description = "Large Language Model Batch Operations"
 readme = "README.md"
 authors = [
@@ -12,6 +12,13 @@ dependencies = [
     "pydantic>=2.10",
     "python-dotenv>=1.0.1",
 ]
+
+[project.urls]
+Homepage = "https://co-cddo.github.io/gds-idea-llmbo/"
+Documentation = "https://co-cddo.github.io/gds-idea-llmbo/api/"
+Repository = "https://github.com/co-cddo/gds-idea-llmbo.git"
+Issues = "https://github.com/co-cddo/gds-idea-llmbo/issues"
+# Changelog = "https://github.com/me/spam/blob/master/CHANGELOG.md"
 
 [build-system]
 requires = ["hatchling"]

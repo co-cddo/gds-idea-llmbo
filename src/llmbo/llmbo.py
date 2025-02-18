@@ -865,6 +865,7 @@ class StructuredBatchInferer(BatchInferer):
             - Sets tool_choice to force use of the defined schema
             - Original ModelInputs are modified to include tool configurations
         """
+        self.logger.info(f"Adding tool {self.tool['name']} to model input")
         with_tools = {
             id: self._add_tool_to_model_input(model_input)
             for id, model_input in inputs.items()
@@ -884,7 +885,7 @@ class StructuredBatchInferer(BatchInferer):
         Returns:
             ModelInput: The modified model input with tool configurations added
         """
-        self.logger.info(f"Adding tool {self.tool['name']} to model input")
+
         model_input.tools = [self.tool]
         model_input.tool_choice = ToolChoice(
             type="tool", name=self.output_model.__name__
