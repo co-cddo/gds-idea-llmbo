@@ -1,4 +1,5 @@
 version = 1
+revision = 1
 requires-python = ">=3.10"
 
 [[package]]
@@ -593,7 +594,7 @@ wheels = [
 
 [[package]]
 name = "llmbo-bedrock"
-version = "0.1.6"
+version = "0.1.7"
 source = { editable = "." }
 dependencies = [
     { name = "boto3" },

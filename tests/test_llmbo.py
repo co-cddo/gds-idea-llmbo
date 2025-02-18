@@ -97,6 +97,19 @@ def batch_inferer(mock_boto3_session):
     )
 
 
+@pytest.fixture
+def structured_batch_inferer(mock_boto3_session):
+    """Create a configured StructuredBatchInferer instance for testing."""
+    return StructuredBatchInferer(
+        model_name="test-model",
+        bucket_name="test-bucket",
+        region="test-region",
+        job_name="test-job",
+        role_arn="arn:aws:iam::123456789012:role/TestRole",
+        output_model=ExampleOutput,
+    )
+
+
 def test_init(mock_boto3_session):
     """Test BatchInferer initialisation."""
 
@@ -262,3 +275,73 @@ def test_structured_init(mock_boto3_session):
         [call("s3"), call("iam"), call("bedrock", region_name=inputs["region"])],
         any_order=True,
     )
+
+
+def test_validate_result_valid(structured_batch_inferer):
+    """Test validate_result with a valid input."""
+    valid_result = {
+        "stop_reason": "tool_use",
+        "content": [{"type": "tool_use", "input": {"name": "John Doe", "age": 30}}],
+    }
+    result = structured_batch_inferer.validate_result(valid_result)
+    assert isinstance(result, ExampleOutput)
+    assert result.name == "John Doe"
+    assert result.age == 30
+
+
+def test_validate_result_wrong_stop_reason(structured_batch_inferer):
+    """Test validate_result with wrong stop reason."""
+    invalid_result = {
+        "stop_reason": "max_tokens",
+        "content": [{"type": "tool_use", "input": {"name": "Jane Doe", "age": 25}}],
+    }
+    result = structured_batch_inferer.validate_result(invalid_result)
+    assert result is None
+
+
+def test_validate_result_multiple_contents(structured_batch_inferer):
+    """Test validate_result with multiple content items."""
+    invalid_result = {
+        "stop_reason": "tool_use",
+        "content": [
+            {"type": "tool_use", "input": {"name": "Alice", "age": 28}},
+            {"type": "tool_use", "input": {"name": "Bob", "age": 32}},
+        ],
+    }
+    result = structured_batch_inferer.validate_result(invalid_result)
+    assert result is None
+
+
+def test_validate_result_wrong_schema(structured_batch_inferer):
+    """Test validate_result with input that doesn't match the schema."""
+    invalid_result = {
+        "stop_reason": "tool_use",
+        "content": [
+            {
+                "type": "tool_use",
+                "input": {
+                    "name": "Charlie",
+                    "age": "thirty",  # Age should be an integer
+                },
+            }
+        ],
+    }
+    result = structured_batch_inferer.validate_result(invalid_result)
+    assert result is None
+
+
+def test_validate_result_missing_content(structured_batch_inferer):
+    """Test validate_result with missing content."""
+    invalid_result = {"stop_reason": "tool_use"}
+    result = structured_batch_inferer.validate_result(invalid_result)
+    assert result is None
+
+
+def test_validate_result_wrong_content_type(structured_batch_inferer):
+    """Test validate_result with wrong content type."""
+    invalid_result = {
+        "stop_reason": "tool_use",
+        "content": [{"type": "text", "text": "This is not a tool use."}],
+    }
+    result = structured_batch_inferer.validate_result(invalid_result)
+    assert result is None

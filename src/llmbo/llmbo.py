@@ -10,7 +10,7 @@ from uuid import uuid4
 import boto3
 from botocore.exceptions import ClientError
 from dotenv import load_dotenv
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 logger = logging.getLogger(__name__)
 
@@ -598,22 +598,25 @@ class BatchInferer:
             time.sleep(poll_interval_seconds)
         return True
 
-    def auto(self, inputs: Dict[str, ModelInput]) -> dict[str, ModelInput]:
-        """Execute the complete batch inference workflow automatically.
+    def auto(self, inputs: Dict[str, ModelInput], poll_time_secs: int = 60) -> Dict:
+        """
+        Execute the complete batch inference workflow automatically.
 
         This method combines the preparation, execution, monitoring, and result retrieval
         steps into a single operation.
 
         Args:
             inputs (Dict[str, ModelInput]): Dictionary of record IDs mapped to their ModelInput configurations
+            poll_time_secs (int, optional): How often to poll for model progress. Defaults to 60.
 
         Returns:
-            List[dict]: The results of the batch inference job
+            List[Dict]: The results from the batch inference job
         """
+
         self.prepare_requests(inputs)
         self.push_requests_to_s3()
         self.create()
-        self.poll_progress(10 * 60)
+        self.poll_progress(poll_time_secs)
         self.download_results()
         self.load_results()
         return self.results
@@ -946,17 +949,23 @@ class StructuredBatchInferer(BatchInferer):
             'John'
         """
         if not result["stop_reason"] == "tool_use":
-            self.logger.warning("Model did not use tool")
+            self.logger.warning("Validation warning: Model did not use tool")
             return None
-        if not len(result["content"]) == 1:
-            self.logger.warning("Multiple instances of tool use per execution")
+        if result.get("content", []) == []:
+            self.logger.warning("Validation warning: No content found in response")
+        if not len(result.get("content", [])) == 1:
+            self.logger.warning(
+                "Validation warning: Multiple instances of tool use per execution"
+            )
             return None
         if result["content"][0]["type"] == "tool_use":
             try:
                 output = self.output_model(**result["content"][0]["input"])
                 return output
-            except TypeError as e:
-                self.logger.warning(f"Could not validate output {e}")
+            except ValidationError as e:
+                self.logger.warning(
+                    f"Validation warning: Could not validate output {e}"
+                )
                 return None
 
     @classmethod
