@@ -598,22 +598,25 @@ class BatchInferer:
             time.sleep(poll_interval_seconds)
         return True
 
-    def auto(self, inputs: Dict[str, ModelInput]) -> dict[str, ModelInput]:
-        """Execute the complete batch inference workflow automatically.
+    def auto(self, inputs: Dict[str, ModelInput], poll_time_secs: int = 60) -> Dict:
+        """
+        Execute the complete batch inference workflow automatically.
 
         This method combines the preparation, execution, monitoring, and result retrieval
         steps into a single operation.
 
         Args:
             inputs (Dict[str, ModelInput]): Dictionary of record IDs mapped to their ModelInput configurations
+            poll_time_secs (int, optional): How often to poll for model progress. Defaults to 60.
 
         Returns:
-            List[dict]: The results of the batch inference job
+            List[Dict]: The results from the batch inference job
         """
+
         self.prepare_requests(inputs)
         self.push_requests_to_s3()
         self.create()
-        self.poll_progress(10 * 60)
+        self.poll_progress(poll_time_secs)
         self.download_results()
         self.load_results()
         return self.results
