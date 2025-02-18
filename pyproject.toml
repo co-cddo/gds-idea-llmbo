@@ -13,6 +13,13 @@ dependencies = [
     "python-dotenv>=1.0.1",
 ]
 
+[project.urls]
+Homepage = "https://co-cddo.github.io/gds-idea-llmbo/"
+Documentation = "https://co-cddo.github.io/gds-idea-llmbo/api/"
+Repository = "https://github.com/co-cddo/gds-idea-llmbo.git"
+Issues = "https://github.com/co-cddo/gds-idea-llmbo/issues"
+# Changelog = "https://github.com/me/spam/blob/master/CHANGELOG.md"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
