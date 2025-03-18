@@ -1,8 +1,10 @@
 from .llmbo import (
     BatchInferer,
+    StructuredBatchInferer,
+)
+from .models import (
     Manifest,
     ModelInput,
-    StructuredBatchInferer,
     ToolChoice,
 )
 
