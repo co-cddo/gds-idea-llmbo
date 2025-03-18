@@ -9,6 +9,8 @@ boto3.setup_default_session()
 
 
 class Dog(BaseModel):
+    """An instance of a dog."""
+
     name: str
     breed: str
     age: int

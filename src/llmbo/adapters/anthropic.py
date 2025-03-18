@@ -33,7 +33,7 @@ class AnthropicAdapter(ModelProviderAdapter):
 
     @classmethod
     def prepare_model_input(
-        cls, model_input: ModelInput, output_model: type[BaseModel]
+        cls, model_input: ModelInput, output_model: type[BaseModel] | None = None
     ) -> ModelInput:
         """Prepare model input for Anthropic Claude models.
 
@@ -72,23 +72,26 @@ class AnthropicAdapter(ModelProviderAdapter):
         Returns:
             Validated model instance or None if validation fails
         """
-        # Check if the model used a tool (required for structured output)
         if result.get("stop_reason") != "tool_use":
             return None
 
         # Ensure content exists
-        if not result.get("content", []):
+        content = result.get("content", [])
+        if not content:
             return None
 
-        # Process tool use response
-        if (
-            len(result["content"]) > 0
-            and result["content"][0].get("type") == "tool_use"
-        ):
-            try:
-                # Parse tool use input as our output model
-                return output_model(**result["content"][0]["input"])
-            except ValidationError:
-                return None
+        # Check that there's exactly one tool call
+        # Count the number of tool_use items
+        tool_use_items = [item for item in content if item.get("type") == "tool_use"]
+        if len(tool_use_items) != 1:
+            return None
+
+        # Process the single tool use response
+        tool_use = tool_use_items[0]
+        try:
+            # Parse tool use input as our output model
+            return output_model(**tool_use["input"])
+        except ValidationError:
+            return None
 
         return None
