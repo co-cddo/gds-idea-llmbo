@@ -1,3 +1,4 @@
+from .adapters import AnthropicAdapter
 from .llmbo import (
     BatchInferer,
     StructuredBatchInferer,
@@ -7,6 +8,10 @@ from .models import (
     ModelInput,
     ToolChoice,
 )
+from .registry import ModelAdapterRegistry
+
+# Register the model adapters
+ModelAdapterRegistry.register(r"(anthropic|claude)", AnthropicAdapter)
 
 __all__ = [
     "Manifest",

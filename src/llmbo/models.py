@@ -5,6 +5,8 @@ from typing import Literal
 
 @dataclass
 class Manifest:
+    """Job manifest details."""
+
     totalRecordCount: int
     processedRecordCount: int
     successRecordCount: int
@@ -15,6 +17,8 @@ class Manifest:
 
 @dataclass
 class ToolChoice:
+    """Toolchoice details."""
+
     type: Literal["any", "tool", "auto"]
     name: str | None = None
 
@@ -56,10 +60,12 @@ class ModelInput:
     tool_choice: ToolChoice | None = None
 
     def to_dict(self):
+        """Convert to dict."""
         result = {k: v for k, v in self.__dict__.items() if v is not None}
         if self.tool_choice:
             result["tool_choice"] = self.tool_choice.__dict__
         return result
 
     def to_json(self):
+        """Convert to json string."""
         return json.dumps(self.to_dict())
