@@ -93,5 +93,3 @@ class AnthropicAdapter(ModelProviderAdapter):
             return output_model(**tool_use["input"])
         except ValidationError:
             return None
-
-        return None
