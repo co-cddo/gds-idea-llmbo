@@ -2,7 +2,7 @@ import logging
 import re
 from re import Pattern
 
-from .adapters.base import ModelProviderAdapter
+from .adapters.base import DefaultAdapter, ModelProviderAdapter
 
 
 class ModelAdapterRegistry:
@@ -18,7 +18,7 @@ class ModelAdapterRegistry:
     """
 
     _adapters: list[tuple[Pattern, type[ModelProviderAdapter]]] = []
-    logger = logging.getLogger("your_package.registry")
+    logger = logging.getLogger(__name__)
 
     @classmethod
     def register(cls, pattern: str, adapter_class: type[ModelProviderAdapter]) -> None:
@@ -64,12 +64,11 @@ class ModelAdapterRegistry:
             model_name: The model name/ID to find an adapter for
 
         Returns:
-            An adapter class for the given model
-
-        Raises:
-            ValueError: If no adapter is registered for the model name
+            An adapter class for the given model, or the default adapter if no pattern
+            is found
         """
         for pattern, adapter in cls._adapters:
             if pattern.search(model_name):
                 return adapter
-        raise ValueError(f"No adapter registered for model: {model_name}")
+            else:
+                return DefaultAdapter

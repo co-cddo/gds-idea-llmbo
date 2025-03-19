@@ -5,6 +5,9 @@ from pydantic import BaseModel
 
 from ..models import ModelInput
 
+# TODO add better error messages for the notimplemented functions linking to
+# the documentation when its written.
+
 
 class ModelProviderAdapter(ABC):
     """Abstract interface for model-specific adapters.
@@ -67,3 +70,12 @@ class ModelProviderAdapter(ABC):
         raise NotImplementedError(
             f"{cls.__name__} does not support structured output validation."
         )
+
+
+class DefaultAdapter(ModelProviderAdapter):
+    """This adapter exists as a fall back for model registry.
+
+    It performs no actions.
+    """
+
+    pass
