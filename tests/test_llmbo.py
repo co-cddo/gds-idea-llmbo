@@ -4,7 +4,7 @@ import pytest
 from pydantic import BaseModel
 
 from llmbo import BatchInferer, ModelInput, StructuredBatchInferer
-from llmbo.adapters import AnthropicAdapter
+from llmbo.adapters import AnthropicAdapter, DefaultAdapter
 
 
 class ExampleOutput(BaseModel):  # noqa: D101
@@ -162,7 +162,7 @@ def test_init(mock_boto3_session: MagicMock | AsyncMock):
     )
 
 
-def test_init_unsupported_model():
+def test_init_unsupported_model(mock_boto3_session: MagicMock | AsyncMock):
     """Test BatchInferer initialisation with an unsupported model raises the correct error"""
     inputs = {
         "model_name": "test-unsupported-model",
@@ -171,11 +171,15 @@ def test_init_unsupported_model():
         "region": "test-region",
         "role_arn": "arn:aws:iam::123456789012:role/TestRole",
     }
-    # Expect ValueError about no adapter available
-    with pytest.raises(
-        ValueError, match=f"No adapter available for model {inputs['model_name']}"
-    ):
-        BatchInferer(**inputs)
+
+    bi = BatchInferer(**inputs)
+    # Test attribute assignment
+    assert bi.model_name == inputs["model_name"]
+    assert bi.bucket_name == inputs["bucket_name"]
+    assert bi.job_name == inputs["job_name"]
+    assert bi.role_arn == inputs["role_arn"]
+    assert bi.region == inputs["region"]
+    assert bi.adapter is DefaultAdapter
 
 
 def test_prepare_requests(
