@@ -547,7 +547,8 @@ class BatchInferer:
         """Check if the batch inference job has completed.
 
         Returns:
-            Optional[str]: The job status if completed (one of VALID_FINISHED_STATUSES), None otherwise
+        str | None: The job status if the job has finished (one of 'Completed', 'Failed',
+            'Stopped', or 'Expired'), or None if the job is still in progress.
         """
         if self.job_status not in VALID_FINISHED_STATUSES:
             self.logger.info(f"Checking status of job {self.job_arn}")
