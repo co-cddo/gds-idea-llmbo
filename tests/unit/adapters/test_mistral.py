@@ -3,21 +3,44 @@ from conftest import ExampleOutput
 from llmbo.adapters import MistralAdapter
 from llmbo.models import ModelInput
 
-expected_tool_definition = {
-    "type": "function",
-    "function": {
-        "name": "ExampleOutput",
-        "description": "Test output model.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "name": {"type": "string", "description": "The name of the person."},
-                "age": {"type": "integer", "description": "The age of the person."},
-            },
-            "required": ["name", "age"],
-        },
-    },
-}
+# expected_tool_definition = {
+#     "type": "function",
+#     "function": {
+#         "name": "ExampleOutput",
+#         "description": "Test output model.",
+#         "parameters": {
+#             "type": "object",
+#             "properties": {
+#                 "name": {"type": "string", "description": "The name of the person."},
+#                 "age": {"type": "integer", "description": "The age of the person."},
+#             },
+#             "required": ["name", "age"],
+#         },
+#     },
+# }
+
+# {'choices': [{'context_logits': None,
+#               'finish_reason': 'tool_calls',
+#               'generation_logits': None,
+#               'index': 0,
+#               'logprobs': None,
+#               'message': {'content': '',
+#                           'index': None,
+#                           'role': 'assistant',
+#                           'tool_call_id': None,
+#                           'tool_calls': [{'function': {'arguments': '{"name": '
+#                                                                     '"Otis", '
+#                                                                     '"breed": '
+#                                                                     '"Schnauzer", '
+#                                                                     '"age": 3}',
+#                                                        'name': 'Dog'},
+#                                           'id': '8GCjLhr7p',
+#                                           'type': 'function'}]}}],
+#  'created': 1742397496,
+#  'id': '2a8ca221-74c2-457b-98ee-9cab78a43c1a',
+#  'model': 'mistral-large-2407',
+#  'object': 'chat.completion',
+#  'usage': {'completion_tokens': 37, 'prompt_tokens': 119, 'total_tokens': 156}}
 
 
 def test_build_tool():
@@ -55,15 +78,23 @@ def test_prepare_model_input():
 def test_validate_result_valid():
     """Test validate_result with a valid input."""
     valid_result = {
-        "tool_calls": [
+        "choices": [
             {
-                "type": "function",
-                "function": {
-                    "name": "ExampleOutput",
-                    "arguments": {"name": "John Doe", "age": 30},
+                "finish_reason": "tool_calls",
+                "message": {
+                    "tool_call_id": None,
+                    "tool_calls": [
+                        {
+                            "function": {
+                                "arguments": '{"name": "John Doe",  "age": 30}',
+                                "name": "ExampleOutput",
+                            },
+                            "type": "function",
+                        }
+                    ],
                 },
             }
-        ]
+        ],
     }
 
     result = MistralAdapter.validate_result(valid_result, ExampleOutput)
@@ -72,29 +103,21 @@ def test_validate_result_valid():
     assert result.age == 30
 
 
-def test_validate_result_string_arguments():
-    """Test validate_result with string arguments (which happens with some models)."""
-    valid_result = {
-        "tool_calls": [
-            {
-                "type": "function",
-                "function": {
-                    "name": "ExampleOutput",
-                    "arguments": '{"name": "John Doe", "age": 30}',
-                },
-            }
-        ]
-    }
-
-    result = MistralAdapter.validate_result(valid_result, ExampleOutput)
-    assert isinstance(result, ExampleOutput)
-    assert result.name == "John Doe"
-    assert result.age == 30
-
-
+# These need editing to reflect the structure of a real call and to check the log
+# to make sure the right message pops up.
 def test_validate_result_no_tool_calls():
     """Test validate_result with no tool calls."""
-    invalid_result = {"content": "Some text response"}
+    invalid_result = valid_result = {
+        "choices": [
+            {
+                "finish_reason": "tool_calls",
+                "message": {
+                    "tool_call_id": None,
+                    "tool_calls": [],
+                },
+            }
+        ],
+    }
     result = MistralAdapter.validate_result(invalid_result, ExampleOutput)
     assert result is None
 
@@ -102,15 +125,23 @@ def test_validate_result_no_tool_calls():
 def test_validate_result_wrong_tool():
     """Test validate_result with wrong tool name."""
     invalid_result = {
-        "tool_calls": [
+        "choices": [
             {
-                "type": "function",
-                "function": {
-                    "name": "DifferentTool",
-                    "arguments": {"name": "Jane Doe", "age": 25},
+                "finish_reason": "tool_calls",
+                "message": {
+                    "tool_call_id": None,
+                    "tool_calls": [
+                        {
+                            "function": {
+                                "arguments": '{"name": "John Doe",  "age": 30}',
+                                "name": "WrongName",
+                            },
+                            "type": "function",
+                        }
+                    ],
                 },
             }
-        ]
+        ],
     }
 
     result = MistralAdapter.validate_result(invalid_result, ExampleOutput)
@@ -119,19 +150,24 @@ def test_validate_result_wrong_tool():
 
 def test_validate_result_invalid_schema():
     """Test validate_result with schema validation failure."""
-    invalid_result = {
-        "tool_calls": [
+    invalid_result = valid_result = {
+        "choices": [
             {
-                "type": "function",
-                "function": {
-                    "name": "ExampleOutput",
-                    "arguments": {
-                        "name": "John Doe",
-                        "age": "thirty",
-                    },  # age should be int
+                "finish_reason": "tool_calls",
+                "message": {
+                    "tool_call_id": None,
+                    "tool_calls": [
+                        {
+                            "function": {
+                                "arguments": '{"name": "John Doe",  "age": "thirty"}',
+                                "name": "ExampleOutput",
+                            },
+                            "type": "function",
+                        }
+                    ],
                 },
             }
-        ]
+        ],
     }
 
     result = MistralAdapter.validate_result(invalid_result, ExampleOutput)

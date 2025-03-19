@@ -1,9 +1,10 @@
+import json
 import logging
-from typing import Any, Dict, Literal
+from typing import Any
 
 from pydantic import BaseModel, ValidationError
 
-from ..models import ModelInput, ToolChoice
+from ..models import ModelInput
 from .base import ModelProviderAdapter
 
 
@@ -91,40 +92,44 @@ class MistralAdapter(ModelProviderAdapter):
         """
         cls.logger.debug(f"Validating result against {output_model.__name__} schema")
 
-        # Check if we have tool_calls in the response
-        tool_calls = result.get("tool_calls", [])
-        if not tool_calls:
-            cls.logger.debug("No tool_calls found in result")
+        # Check we have choices
+        choices = result.get("choices", [])
+        if not choices:
+            cls.logger.debug("No expected 'choices' key in result.")
             return None
 
-        # Find the matching tool call for our output model
-        for tool_call in tool_calls:
-            if (
-                tool_call.get("type") == "function"
-                and tool_call.get("function", {}).get("name") == output_model.__name__
-            ):
-                try:
-                    # Parse arguments as JSON and validate against our model
-                    arguments = tool_call.get("function", {}).get("arguments", {})
-                    if isinstance(arguments, str):
-                        import json
+        # Check tool calls was finish reason
+        finish_reason = choices[0].get("finish_reason")
+        if finish_reason != "tool_calls":
+            cls.logger.debug("Finish reason was not 'tool_choice'")
+            return None
 
-                        try:
-                            arguments = json.loads(arguments)
-                        except json.JSONDecodeError:
-                            cls.logger.debug(
-                                f"Failed to parse arguments as JSON: {arguments}"
-                            )
-                            return None
+        # Check exactly one tool was called.
+        tools = choices[0].get("message", {}).get("tool_calls", [])
+        if len(tools) == 0:
+            cls.logger.debug("No tool_calls in message")
+            return None
+        if len(tools) > 1:
+            cls.logger.debug(f"Too many ({len(tools)}) tools called.")
+            return None
 
-                    instance = output_model(**arguments)
-                    cls.logger.debug(
-                        f"Successfully validated result as {output_model.__name__}"
-                    )
-                    return instance
-                except ValidationError as e:
-                    cls.logger.debug(f"Validation failed: {str(e)}")
-                    return None
+        # Check its the tool we think it is
+        tool_name = tools[0].get("function", {}).get("name", "")
+        if tool_name != output_model.__name__:
+            cls.logger.debug(
+                f"Wrong tool encountered, expected {output_model.__name__} got {tool_name}"
+            )
+            return None
 
-        cls.logger.debug(f"No matching tool call found for {output_model.__name__}")
-        return None
+        try:
+            arguments = json.loads(tools[0].get("function", {}).get("arguments", {}))
+        except json.JSONDecodeError:
+            cls.logger.debug(f"Failed to parse function arguments as JSON: {arguments}")
+            return None
+
+        try:
+            validated_model = output_model(**arguments)
+            return validated_model
+        except ValidationError as e:
+            cls.logger.debug(f"Validation failed: {str(e)}")
+            return None
