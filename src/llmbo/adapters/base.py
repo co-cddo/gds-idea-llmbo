@@ -1,3 +1,4 @@
+import logging
 from abc import ABC, abstractmethod
 from typing import Any
 
@@ -7,6 +8,8 @@ from ..models import ModelInput
 
 # TODO add better error messages for the notimplemented functions linking to
 # the documentation when its written.
+
+logging.getLogger(__name__)
 
 
 class ModelProviderAdapter(ABC):
