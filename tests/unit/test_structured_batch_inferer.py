@@ -1,8 +1,9 @@
 from unittest.mock import MagicMock
 
+from conftest import ExampleOutput
+
 from llmbo import StructuredBatchInferer
 from llmbo.adapters import AnthropicAdapter
-from tests.conftest import ExampleOutput
 
 
 def test_structured_init(mock_boto3_session: MagicMock):
