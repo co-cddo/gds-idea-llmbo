@@ -70,9 +70,9 @@ class ModelAdapterRegistry:
         for pattern, adapter in cls._adapters:
             if pattern.search(model_name):
                 return adapter
-            else:
-                cls.logger.warning(
-                    f"No pattern found for {model_name}, returning default ModelAdapter. ",
-                    "This model is unsupported it may not work as expected.",
-                )
-                return DefaultAdapter
+
+        cls.logger.warning(
+            f"No pattern found for {model_name}, returning default ModelAdapter. ",
+            "This model is unsupported it may not work as expected.",
+        )
+        return DefaultAdapter
