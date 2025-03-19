@@ -163,7 +163,7 @@ def test_init(mock_boto3_session: MagicMock | AsyncMock):
 
 
 def test_init_unsupported_model(mock_boto3_session: MagicMock | AsyncMock):
-    """Test BatchInferer initialisation with an unsupported model raises the correct error"""
+    """Test BatchInferer initialisation with an unsupported model raises the correct error."""
     inputs = {
         "model_name": "test-unsupported-model",
         "bucket_name": "test-bucket",
@@ -185,7 +185,7 @@ def test_init_unsupported_model(mock_boto3_session: MagicMock | AsyncMock):
 def test_prepare_requests(
     batch_inferer: BatchInferer, sample_inputs: dict[str, ModelInput]
 ):
-    """Test that requests are prepared"""
+    """Test that requests are prepared."""
     batch_inferer.prepare_requests(sample_inputs)
 
     assert len(batch_inferer.requests) == len(sample_inputs), (
@@ -193,7 +193,7 @@ def test_prepare_requests(
     )
     assert list(batch_inferer.requests[0].keys()) == ["recordId", "modelInput"]
     assert batch_inferer.requests[0]["recordId"] == "000"
-    assert "anthropic_version" in batch_inferer.requests[0]["modelInput"].keys()
+    assert "anthropic_version" in batch_inferer.requests[0]["modelInput"]
     assert all(
         [isinstance(request["modelInput"], dict) for request in batch_inferer.requests]
     ), "requests are not of expected type "
@@ -224,7 +224,7 @@ def test_create_job(batch_inferer: BatchInferer, sample_inputs: dict[str, ModelI
 
 
 def test_create_fail_no_requests(batch_inferer: BatchInferer):
-    """Test failure with no set requests."""
+    """Test an error is raised if create is called before prepare_requests."""
     with pytest.raises(AttributeError):
         batch_inferer.create()
 
@@ -233,6 +233,7 @@ def test_create_fail_http_error(
     batch_inferer: BatchInferer,
     sample_inputs: dict[str, ModelInput],
 ):
+    """Tests that an error is raised when a jon creation fails."""
     batch_inferer.client.create_model_invocation_job.return_value = {
         "ResponseMetadata": {"HTTPStatusCode": 400}
     }
@@ -249,6 +250,7 @@ def test_create_fail_http_error(
 def test_create_fail_no_response(
     batch_inferer: BatchInferer, sample_inputs: dict[str, ModelInput]
 ):
+    """Tests that an error is raised if no response from bedrock."""
     batch_inferer.client.create_model_invocation_job.return_value = None
 
     batch_inferer.prepare_requests(sample_inputs)
