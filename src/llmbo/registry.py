@@ -33,6 +33,10 @@ class ModelAdapterRegistry:
         """
         # Add type validation to ensure adapter_class is a proper ModelProviderAdapter
         if not issubclass(adapter_class, ModelProviderAdapter):
+            cls.logger.error(
+                f"Adapter class must be a subclass of ModelProviderAdapter, "
+                f"got {adapter_class.__name__}"
+            )
             raise TypeError(
                 f"Adapter class must be a subclass of ModelProviderAdapter, "
                 f"got {adapter_class.__name__}"

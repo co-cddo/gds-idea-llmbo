@@ -315,6 +315,10 @@ class BatchInferer:
         ]
 
     def _check_input_length(self, inputs):
+        if inputs is None:
+            self.logger.error("Minimum Batch Size is 100, None supplied")
+            raise ValueError("Minimum Batch Size is 100, None supplied")
+
         if len(inputs) < 100:
             self.logger.error(f"Minimum Batch Size is 100, {len(inputs)} given.")
             raise ValueError(f"Minimum Batch Size is 100, {len(inputs)} given.")
