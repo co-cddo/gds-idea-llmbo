@@ -1,12 +1,8 @@
-from unittest.mock import MagicMock, call, patch
-
-import pytest
-from pydantic import BaseModel
-
 from llmbo.models import Manifest
 
 
 def test_basic_instantiation():
+    """Test that a normal instantiation works correctly."""
     manifest = Manifest(
         totalRecordCount=100,
         processedRecordCount=90,
@@ -24,8 +20,10 @@ def test_basic_instantiation():
 
 
 def test_optional_instantiation():
-    # Manifests that fail entirely do not have TokenCounts. The model should be created
-    # regardless
+    """Test that a normal instantiation works correctly.
+
+    Manifests that fail entirely do not have TokenCounts. The model should be created regardless"
+    """
     manifest = Manifest(
         totalRecordCount=100,
         processedRecordCount=90,
