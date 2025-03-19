@@ -1,4 +1,4 @@
-from llmbo.models import Manifest
+from llmbo.models import Manifest, ModelInput
 
 
 def test_basic_instantiation():
@@ -36,3 +36,12 @@ def test_optional_instantiation():
     assert manifest.errorRecordCount == 5
     assert manifest.inputTokenCount is None
     assert manifest.outputTokenCount is None
+
+
+def test_modelinput_to_dict_with_tool_choice_model():
+    """Test that a normal instantiation works correctly.
+
+    Manifests that fail entirely do not have TokenCounts. The model should be created regardless"
+    """
+    mi = ModelInput(messages=[], tool_choice="any")
+    mi.to_dict()

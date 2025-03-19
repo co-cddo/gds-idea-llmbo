@@ -57,12 +57,12 @@ class ModelInput:
     top_k: int | None = None
 
     tools: list[dict] | None = None
-    tool_choice: ToolChoice | None = None
+    tool_choice: ToolChoice | str | None = None
 
     def to_dict(self):
         """Convert to dict."""
         result = {k: v for k, v in self.__dict__.items() if v is not None}
-        if self.tool_choice:
+        if isinstance(self.tool_choice, ToolChoice):
             result["tool_choice"] = self.tool_choice.__dict__
         return result
 

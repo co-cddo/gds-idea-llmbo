@@ -159,7 +159,9 @@ class StructuredBatchInferer(BatchInferer):
         self.instances = [
             {
                 "recordId": result["recordId"],
-                "outputModel": self.adapter.validate_result(result["modelOutput"]),
+                "outputModel": self.adapter.validate_result(
+                    result["modelOutput"], self.output_model
+                ),
             }
             if result.get("modelOutput")
             else None
