@@ -51,12 +51,12 @@ class ModelInput:
     max_tokens: int = 2000
 
     system: str | None = None
-    stop_sequences: list[str] | None | None = None
+    stop_sequences: list[str] | None = None
     temperature: float | None = None
     top_p: float | None = None
     top_k: int | None = None
 
-    tools: list[dict] | None | None = None
+    tools: list[dict] | None = None
     tool_choice: ToolChoice | None = None
 
     def to_dict(self):
