@@ -20,7 +20,7 @@ inputs = {
 
 bi = BatchInferer(
     model_name="anthropic.claude-3-haiku-20240307-v1:0",
-    job_name="my-first-inference-job",
+    job_name="my-first-inference-job-1s",
     region="us-east-1",
     bucket_name="cddo-af-bedrock-batch-inference-us-east-1",
     role_arn="arn:aws:iam::992382722318:role/BatchInferenceRole",

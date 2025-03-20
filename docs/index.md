@@ -5,17 +5,23 @@ However, orchestrating these jobs, managing inputs and outputs, and ensuring con
 LLMbo aims to solve these problems by providing an intuitive, Pythonic interface for Bedrock batch operations.
 
 Additionally, it provides a method of using batch inference for structured responses, 
-taking inspiration from the likes of [instructor](https://pypi.org/project/instructor/), [mirascope](https://pypi.org/project/mirascope/) and [pydanticai](https://pypi.org/project/pydantic-ai/). You provide a model output as a pydantic model and llmbo creates takes care of the rest.
+taking inspiration from the likes of [instructor](https://pypi.org/project/instructor/), 
+[mirascope](https://pypi.org/project/mirascope/) and [pydanticai](https://pypi.org/project/pydantic-ai/). 
+You provide a model output as a pydantic model and llmbo creates takes care of the rest.
 
-Currently the library has only been tested with compatible Anthropic models. See the AWS
-documentation for [models that support batch inference.](https://docs.aws.amazon.com/bedrock/latest/userguide/batch-inference-supported.html)
+See the AWS documentation for [models that support batch inference.](https://docs.aws.amazon.com/bedrock/latest/userguide/batch-inference-supported.html)
+
+Currently the library has full support (including StructuredBatchInference) for Anthropic and Mistral models. 
+Other models may be supported through the default adapter, or you can write and register your own. 
+
 
 ## Prerequisites 
 
 - A `.env` file with an entry for `AWS_PROFILE=`. This profile should have sufficient 
 permissions to create and schedule a batch inference job. See the [AWS instructions](https://docs.aws.amazon.com/bedrock/latest/userguide/batch-inference-permissions.html)
 - [A service role with the required permissions to execute the job.](https://docs.aws.amazon.com/bedrock/latest/userguide/batch-inference-permissions.html#batch-inference-permissions-service), 
-- A s3 bucket to store the input and outputs for the job. S3 buckets must exists in the same region as you execute the job.
+- A s3 bucket to store the input and outputs for the job. S3 buckets must exists in the same region as you execute the job. This is a limitation of AWS batch inference rather that the 
+package.
     - Inputs will be written to `f{s3_bucket}/input/{job_name}.jsonl`
     - Outputs will be written to `f{s3_bucket}/output/{job_id}/{job_name}.jsonl.out` and 
       `f{s3_bucket}/output/{job_id}/manifest.json.out`
@@ -80,5 +86,5 @@ structured_results = sbi.auto(inputs)
 
 For more detailed examples see the followingin llmbo.py:
 
-- `batch_inference_example()`: for an example of free text response
-- `structured_batch_inference_example()`: for an example of structured response ala instructor
+- `examples/batch_inference_example.py`: for an example of free text response
+- `examples/structured_batch_inference_example.py`: for an example of structured response ala instructor

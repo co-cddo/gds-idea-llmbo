@@ -33,10 +33,10 @@ inputs = {
 }
 
 sbi = StructuredBatchInferer(
-    model_name="mistral.mistral-large-2407-v1:0",
-    job_name="my-first-mistral-inference-job-1234567",
-    region="us-west-2",
-    bucket_name="cddo-af-bedrock-batch-inference-us-west-2",
+    model_name="anthropic.claude-3-haiku-20240307-v1:0",
+    job_name="test-i-didnt-break-anthropic-1",
+    region="eu-west-2",
+    bucket_name="cddo-af-bedrock-batch-inference-eu-west-2",
     role_arn="arn:aws:iam::992382722318:role/BatchInferenceRole",
     output_model=Dog,
 )
