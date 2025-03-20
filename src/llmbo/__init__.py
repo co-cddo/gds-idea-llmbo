@@ -18,4 +18,5 @@ __all__ = [
     "ModelInput",
     "BatchInferer",
     "StructuredBatchInferer",
+    "ModelAdapterRegistry",
 ]
