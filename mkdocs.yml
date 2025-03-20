@@ -14,7 +14,7 @@ markdown_extensions:
   - pymdownx.snippets
   - pymdownx.superfences
 nav:
-  - Home: index.md
+  - Home: README.md
   - API Reference: api.md
 
 plugins:

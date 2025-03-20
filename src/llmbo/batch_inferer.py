@@ -2,79 +2,16 @@ import json
 import logging
 import os
 import time
-from dataclasses import dataclass
-from datetime import datetime
-from typing import Any, Dict, List, Literal, Optional, Type
+from typing import Any
 from uuid import uuid4
 
 import boto3
 from botocore.exceptions import ClientError
-from dotenv import load_dotenv
-from pydantic import BaseModel, ValidationError
+
+from .models import Manifest, ModelInput
+from .registry import ModelAdapterRegistry
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class Manifest:
-    totalRecordCount: int
-    processedRecordCount: int
-    successRecordCount: int
-    errorRecordCount: int
-    inputTokenCount: Optional[int]
-    outputTokenCount: Optional[int]
-
-
-@dataclass
-class ToolChoice:
-    type: Literal["any", "tool", "auto"]
-    name: Optional[str] = None
-
-
-@dataclass
-class ModelInput:
-    """Configuration class for AWS Bedrock model inputs.
-
-    This class defines the structure and parameters for model invocation requests
-    following AWS Bedrock's expected format.
-
-    See https://docs.aws.amazon.com/bedrock/latest/userguide/model-parameters-anthropic-claude-messages.html
-
-    Attributes:
-        messages (List[dict]): List of message objects with role and content
-        anthropic_version (str): Version string for Anthropic models
-        max_tokens (int): Maximum number of tokens in the response
-        system (Optional[str]): System message for the model
-        stop_sequences (Optional[List[str]]): Custom stop sequences
-        temperature (Optional[float]): Sampling temperature
-        top_p (Optional[float]): Nucleus sampling parameter
-        top_k (Optional[int]): Top-k sampling parameter
-        tools (Optional[List[dict]]): Tool definitions for structured outputs
-        tool_choice (Optional[ToolChoice]): Tool selection configuration
-    """
-
-    # These are required
-    messages: List[dict]
-    anthropic_version: str = "bedrock-2023-05-31"
-    max_tokens: int = 2000
-
-    system: Optional[str] = None
-    stop_sequences: Optional[List[str]] | None = None
-    temperature: Optional[float] = None
-    top_p: Optional[float] = None
-    top_k: Optional[int] = None
-
-    tools: Optional[List[dict]] | None = None
-    tool_choice: Optional[ToolChoice] = None
-
-    def to_dict(self):
-        result = {k: v for k, v in self.__dict__.items() if v is not None}
-        if self.tool_choice:
-            result["tool_choice"] = self.tool_choice.__dict__
-        return result
-
-    def to_json(self):
-        return json.dumps(self.to_dict())
 
 
 VALID_FINISHED_STATUSES = ["Completed", "Failed", "Stopped", "Expired"]
@@ -92,14 +29,18 @@ class BatchInferer:
         region (str): The region to run the batch inference job in.
         job_name (str): A unique name for the batch inference job
         role_arn (str): The AWS IAM role ARN with necessary permissions
-        time_out_duration_hours (int, optional): Maximum job runtime in hours. Defaults to 24.
-        session (boto3.session, optional): A boto3 session to be used for calls to AWS, If one if not provided a new one will be  created
+        time_out_duration_hours (int, optional): Maximum job runtime in hours.
+            Defaults to 24.
+        session (boto3.session, optional): A boto3 session to be used for calls to AWS,
+            If one if not provided a new one will be  created
 
     Attributes:
         job_arn (str): The ARN of the created batch inference job
-        results (List[dict]): The results of the batch inference job. Available after job completion.
+        results (List[dict]): The results of the batch inference job.
+            Available after job completion.
         manifest (Manifest): Job execution statistics. Available after job completion.
-        job_status (str): Current status of the batch job. One of VALID_FINISHED_STATUSES.
+        job_status (str): Current status of the batch job.
+            One of VALID_FINISHED_STATUSES.
     """
 
     logger = logging.getLogger(f"{__name__}.BatchInferer")
@@ -120,13 +61,16 @@ class BatchInferer:
         of submitting and managing batch jobs on AWS Bedrock.
 
         Args:
-            model_name (str): The AWS Bedrock model identifier (e.g., 'anthropic.claude-3-haiku-20240307-v1:0')
+            model_name (str): The AWS Bedrock model identifier
+                (e.g., 'anthropic.claude-3-haiku-20240307-v1:0')
             bucket_name (str): Name of the S3 bucket for storing job inputs and outputs
-            region (str): The region containing the llm to call, must match the bucket region
+            region (str): The region containing the llm to call, must match the bucket
             job_name (str): Unique identifier for this batch job. Used in file naming.
             role_arn (str): AWS IAM role ARN with permissions for Bedrock and S3 access
-            time_out_duration_hours (int, optional): Maximum runtime for the batch job. Defaults to 24 hours.
-            session (boto3.session, optional): A boto3 session to be used for calls to AWS, If one if not provided a new one will be  created
+            time_out_duration_hours (int, optional): Maximum runtime for the batch job.
+                Defaults to 24 hours.
+            session (boto3.session, optional): A boto3 session to be used for AWS calls,
+                If one if not provided a new one will be created
 
         Raises:
             KeyError: If AWS_PROFILE environment variable is not set
@@ -147,10 +91,11 @@ class BatchInferer:
             - The S3 bucket must exist and be accessible via the provided role
             - Job name will be used to create unique file names for inputs and outputs
         """
-
         self.logger.info("Intialising BatchInferer")
         # model parameters
         self.model_name = model_name
+        self.adapter = self._get_adapter(model_name)
+
         self.time_out_duration_hours = time_out_duration_hours
 
         self.session: boto3.Session = session or boto3.Session()
@@ -181,13 +126,26 @@ class BatchInferer:
         self.logger.info("Initialized BatchInferer")
 
     @property
-    def unique_id_from_arn(self):
+    def unique_id_from_arn(self) -> str:
+        """Retrieves the id from the job ARN.
+
+        Raises:
+            ValueError: if no job ARN has been set
+
+        Returns:
+            str: a unique id portion of the job ARN
+        """
         if not self.job_arn:
             self.logger.error("Job ARN not set")
             raise ValueError("Job ARN not set")
         return self.job_arn.split("/")[-1]
 
-    def check_for_profile(self):
+    def check_for_profile(self) -> None:
+        """Checks if a profile has been set.
+
+        Raises:
+            KeyError: If AWS_PROFILE does not exist in the env.
+        """
         if not os.getenv("AWS_PROFILE"):
             self.logger.error("AWS_PROFILE environment variable not set")
             raise KeyError("AWS_PROFILE environment variable not set")
@@ -195,14 +153,13 @@ class BatchInferer:
     @staticmethod
     def _read_jsonl(file_path):
         data = []
-        with open(file_path, "r") as file:
+        with open(file_path) as file:
             for line in file:
                 data.append(json.loads(line.strip()))
         return data
 
     def _get_bucket_location(self, bucket_name: str) -> str | None:
-        """
-        get the location of the s3 bucket
+        """Get the location of the s3 bucket.
 
         Args:
             bucket_name (str): the name of a bucket
@@ -219,15 +176,15 @@ class BatchInferer:
 
             if response:
                 region = response["LocationConstraint"]
-                # aws returns None if the region is us-east-1 otherwise it returns the region
+                # aws returns None if the region is us-east-1 otherwise it returns the
+                # region
                 return region if region else "us-east-1"
         except ClientError as e:
             self.logger.error(f"Bucket {bucket_name} is not accessible: {e}")
-            raise ValueError(f"Bucket {bucket_name} is not accessible")
+            raise ValueError(f"Bucket {bucket_name} is not accessible") from e
 
     def _check_bucket(self, bucket_name: str, region: str) -> None:
-        """
-        Validate if the bucket_name provided exists
+        """Validate if the bucket_name provided exists.
 
         Args:
             bucket_name (str): the name of a bucket
@@ -242,14 +199,16 @@ class BatchInferer:
             s3_client.head_bucket(Bucket=bucket_name)
         except ClientError as e:
             self.logger.error(f"Bucket {bucket_name} is not accessible: {e}")
-            raise ValueError(f"Bucket {bucket_name} is not accessible")
+            raise ValueError(f"Bucket {bucket_name} is not accessible") from e
 
         if (bucket_region := self._get_bucket_location(bucket_name)) != region:
             self.logger.error(
-                f"Bucket {bucket_name} is not located in the same region [{region}] as the llm [{bucket_region}]"
+                f"Bucket {bucket_name} is not located in the same region [{region}] "
+                f"as the llm [{bucket_region}]"
             )
             raise ValueError(
-                f"Bucket {bucket_name} is not located in the same region [{region}] as the llm [{bucket_region}]"
+                f"Bucket {bucket_name} is not located in the same region [{region}] "
+                f"as the llm [{bucket_region}]"
             )
 
     def _check_arn(self, role_arn: str) -> bool:
@@ -267,8 +226,8 @@ class BatchInferer:
 
         Raises:
             ValueError: If the role does not exist.
-        ClientError: If there are AWS API issues unrelated to role existence."""
-
+        ClientError: If there are AWS API issues unrelated to role existence.
+        """
         if not role_arn.startswith("arn:aws:iam::"):
             self.logger.error("Invalid ARN format")
             raise ValueError("Invalid ARN format")
@@ -286,15 +245,25 @@ class BatchInferer:
         except ClientError as e:
             if e.response["Error"]["Code"] == "NoSuchEntity":
                 self.logger.error(f"Role '{role_name}' does not exist.")
-                raise ValueError(f"Role '{role_name}' does not exist.")
+                raise ValueError(f"Role '{role_name}' does not exist.") from e
             else:
                 raise e
 
-    def prepare_requests(self, inputs: Dict[str, ModelInput]) -> None:
+    def _get_adapter(self, model_name):
+        # Get the appropriate adapter for this model
+        try:
+            adapter = ModelAdapterRegistry.get_adapter(model_name)
+            self.logger.info(f"Using {adapter.__name__} for model {model_name}")
+            return adapter
+        except ValueError as e:
+            self.logger.error(f"No adapter available for model {model_name}")
+            raise ValueError(f"No adapter available for model {model_name}") from e
+
+    def prepare_requests(self, inputs: dict[str, ModelInput]) -> None:
         """Prepare batch inference requests from a dictionary of model inputs.
 
-        Formats model inputs into the required JSONL structure for AWS Bedrock batch processing.
-        Each request is formatted as:
+        Formats model inputs into the required JSONL structure for AWS Bedrock
+        batch processing. Each request is formatted as:
             {
                 "recordId": str,
                 "modelInput": dict
@@ -325,21 +294,33 @@ class BatchInferer:
             - The prepared requests are stored in self.requests
             - Each ModelInput is converted to a dict using its to_dict() method
         """
-        # maybe a data class conforming to this???
-        #
-
+        # TODO: Should I copy these inputs so I dont modify them.
         self.logger.info(f"Preparing {len(inputs)} requests")
-        if len(inputs) < 100:
-            self.logger.error(f"Minimum Batch Size is 100, {len(inputs)} given.")
-            raise ValueError(f"Minimum Batch Size is 100, {len(inputs)} given.")
+        self._check_input_length(inputs)
+        self.logger.info("Adding model specific parameters to model_input")
+        for id, model_input in inputs.items():
+            inputs[id] = self.adapter.prepare_model_input(model_input)
 
-        self.requests = [
+        self.requests = self._to_requests(inputs)
+
+    def _to_requests(self, inputs):
+        self.logger.info("Converting to dict")
+        return [
             {
                 "recordId": id,
                 "modelInput": model_input.to_dict(),
             }
             for id, model_input in inputs.items()
         ]
+
+    def _check_input_length(self, inputs):
+        if inputs is None:
+            self.logger.error("Minimum Batch Size is 100, None supplied")
+            raise ValueError("Minimum Batch Size is 100, None supplied")
+
+        if len(inputs) < 100:
+            self.logger.error(f"Minimum Batch Size is 100, {len(inputs)} given.")
+            raise ValueError(f"Minimum Batch Size is 100, {len(inputs)} given.")
 
     def _write_requests_locally(self) -> None:
         """Write batch inference requests to a local JSONL file.
@@ -361,7 +342,7 @@ class BatchInferer:
             for record in self.requests:
                 file.write(json.dumps(record) + "\n")
 
-    def push_requests_to_s3(self) -> Dict[str, Any]:
+    def push_requests_to_s3(self) -> dict[str, Any]:
         """Upload batch inference requests to S3.
 
         Writes the prepared requests to a local JSONL file and uploads it to the
@@ -393,7 +374,7 @@ class BatchInferer:
         )
         return response
 
-    def create(self) -> Dict[str, Any]:
+    def create(self) -> dict[str, Any]:
         """Create a new batch inference job in AWS Bedrock.
 
         Initializes a new model invocation job using the configured parameters
@@ -443,10 +424,12 @@ class BatchInferer:
                     return response
                 else:
                     self.logger.error(
-                        f"There was an error creating the job {self.job_name}, non 200 response from bedrock"
+                        f"There was an error creating the job {self.job_name},"
+                        " non 200 response from bedrock"
                     )
                     raise RuntimeError(
-                        f"There was an error creating the job {self.job_name}, non 200 response from bedrock"
+                        f"There was an error creating the job {self.job_name},"
+                        " non 200 response from bedrock"
                     )
             else:
                 self.logger.error(
@@ -546,7 +529,6 @@ class BatchInferer:
             RuntimeError: If the job cancellation request fails
             ValueError: If no job_arn is set (i.e., no job has been created)
         """
-
         if not self.job_arn:
             self.logger.error("No job_arn set - no job to cancel")
             raise ValueError("No job_arn set - no job to cancel")
@@ -564,11 +546,12 @@ class BatchInferer:
             )
             raise RuntimeError(f"Failed to cancel job {self.job_name}")
 
-    def check_complete(self) -> Optional[str]:
+    def check_complete(self) -> str | None:
         """Check if the batch inference job has completed.
 
         Returns:
-            Optional[str]: The job status if completed (one of VALID_FINISHED_STATUSES), None otherwise
+        str | None: The job status if the job has finished (one of 'Completed', 'Failed',
+            'Stopped', or 'Expired'), or None if the job is still in progress.
         """
         if self.job_status not in VALID_FINISHED_STATUSES:
             self.logger.info(f"Checking status of job {self.job_arn}")
@@ -585,7 +568,7 @@ class BatchInferer:
             return self.job_status
 
     def poll_progress(self, poll_interval_seconds: int = 60) -> bool:
-        """Polls the progress of a job
+        """Polls the progress of a job.
 
         Args:
             poll_interval_seconds (int, optional): Number of seconds between checks. Defaults to 60.
@@ -598,9 +581,8 @@ class BatchInferer:
             time.sleep(poll_interval_seconds)
         return True
 
-    def auto(self, inputs: Dict[str, ModelInput], poll_time_secs: int = 60) -> Dict:
-        """
-        Execute the complete batch inference workflow automatically.
+    def auto(self, inputs: dict[str, ModelInput], poll_time_secs: int = 60) -> dict:
+        """Execute the complete batch inference workflow automatically.
 
         This method combines the preparation, execution, monitoring, and result retrieval
         steps into a single operation.
@@ -612,7 +594,6 @@ class BatchInferer:
         Returns:
             List[Dict]: The results from the batch inference job
         """
-
         self.prepare_requests(inputs)
         self.push_requests_to_s3()
         self.create()
@@ -648,7 +629,6 @@ class BatchInferer:
             >>> bi.check_complete()
             'Completed'
         """
-
         cls.logger.info(f"Attempting to Recover BatchInferer from {job_arn}")
         session = session or boto3.Session()
         response = cls.check_for_existing_job(job_arn, region, session)
@@ -694,7 +674,7 @@ class BatchInferer:
     @classmethod
     def check_for_existing_job(
         cls, job_arn, region, session: boto3.Session | None = None
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Check if a job exists and return its details.
 
         Args:
@@ -734,431 +714,3 @@ class BatchInferer:
             )
 
         return response
-
-
-class StructuredBatchInferer(BatchInferer):
-    """A specialized BatchInferer that enforces structured outputs using Pydantic models.
-
-    Inspired by the instructor package, see: https://python.useinstructor.com/
-    This class extends BatchInferer to add schema validation and structured output
-    handling using Pydantic models.
-
-    Args:
-        output_model (BaseModel): A Pydantic model defining the expected output structure
-        model_name (str): The name/ID of the AWS Bedrock model to use
-        bucket_name (str): The S3 bucket name for storing input/output data
-        region (str): The region to run the batch inference job in.
-        job_name (str): A unique name for the batch inference job
-        role_arn (str): The AWS IAM role ARN with necessary permissions
-        time_out_duration_hours (int, optional): Maximum job runtime in hours. Defaults to 24.
-        session (boto3.Session, optional): A boto3 session to be used for AWS API calls.
-                                           If not provided, a new session will be created.
-
-
-    """
-
-    logger = logging.getLogger(f"{__name__}.StructuredBatchInferer")
-
-    def __init__(
-        self,
-        output_model: Type[BaseModel],
-        model_name: str,  # this should be an enum...
-        bucket_name: str,
-        region: str,
-        job_name: str,
-        role_arn: str,
-        time_out_duration_hours: int = 24,
-        session: boto3.Session | None = None,
-    ):
-        """Initialize a StructuredBatchInferer for schema-validated batch processing.
-
-        Creates a batch inference manager that enforces structured outputs using
-        a Pydantic model schema. Automatically configures the model to use tools
-        for enforcing the output structure.
-
-        Args:
-            output_model (BaseModel): Pydantic model class defining the expected output structure
-            model_name (str): The AWS Bedrock model identifier
-            bucket_name (str): Name of the S3 bucket for storing job inputs and outputs
-            region (str): Region of the LLM must match the bucket
-            job_name (str): Unique identifier for this batch job
-            role_arn (str): AWS IAM role ARN with permissions for Bedrock and S3 access
-            session (boto3.Session, optional): A boto3 session to be used for AWS API calls.
-                                           If not provided, a new session will be created.
-
-        Raises:
-            KeyError: If AWS_PROFILE environment variable is not set
-            ValueError: If the provided role_arn doesn't exist or is invalid
-
-        Example:
-            >>> class PersonInfo(BaseModel):
-            ...     name: str
-            ...     age: int
-            ...
-            >>> sbi = StructuredBatchInferer(
-            ...     output_model=PersonInfo,
-            ...     model_name="anthropic.claude-3-haiku-20240307-v1:0",
-            ...     bucket_name="my-inference-bucket",
-            ...     job_name="structured-batch-2024",
-            ...     role_arn="arn:aws:iam::123456789012:role/BedrockBatchRole"
-            ... )
-
-        Note:
-            - Converts the Pydantic model into a tool definition for the LLM
-            - All results will be validated against the provided schema
-            - Failed schema validations will raise errors during result processing
-            - Inherits all base BatchInferer functionality
-        """
-        self.output_model = output_model
-        self.tool = self._build_tool()
-        self.logger.info(
-            f"Initialized StructuredBatchInferer with {output_model.__name__} schema"
-        )
-
-        super().__init__(
-            model_name=model_name,
-            bucket_name=bucket_name,
-            region=region,
-            job_name=job_name,
-            role_arn=role_arn,
-            time_out_duration_hours=time_out_duration_hours,
-            session=session,
-        )
-
-    def _build_tool(self) -> dict:
-        """Convert a Pydantic model into a tool definition for the model.
-
-        Returns:
-            dict: A tool description containing name, description, and input schema
-        """
-        return {
-            "name": self.output_model.__name__,
-            "description": self.output_model.__doc__ or "please fill in the schema",
-            "input_schema": self.output_model.model_json_schema(),
-        }
-
-    def prepare_requests(self, inputs: Dict[str, ModelInput]):
-        """Prepare structured batch inference requests with tool configurations.
-
-        Extends the base preparation by adding tool definitions and tool choice
-        parameters to each ModelInput. The tool definition is derived from the
-        Pydantic output_model specified during initialization.
-
-        Args:
-            inputs (Dict[str, ModelInput]): Dictionary mapping record IDs to their corresponding
-                ModelInput configurations. The record IDs will be used to track results.
-
-        Raises:
-            ValueError: If len(inputs) < 100, as AWS Bedrock requires minimum batch size of 100
-
-        Example:
-            >>> class PersonInfo(BaseModel):
-            ...     name: str
-            ...     age: int
-            >>> sbi = StructuredBatchInferer(output_model=PersonInfo, ...)
-            >>> inputs = {
-            ...     "001": ModelInput(
-            ...         messages=[{"role": "user", "content": "John is 25 years old"}],
-            ...     )
-            ... }
-            >>> sbi.prepare_requests(inputs)
-
-        Note:
-            - Automatically adds the output_model schema as a tool definition
-            - Sets tool_choice to force use of the defined schema
-            - Original ModelInputs are modified to include tool configurations
-        """
-        self.logger.info(f"Adding tool {self.tool['name']} to model input")
-        with_tools = {
-            id: self._add_tool_to_model_input(model_input)
-            for id, model_input in inputs.items()
-        }
-        super().prepare_requests(with_tools)
-
-    def _add_tool_to_model_input(self, model_input: ModelInput) -> ModelInput:
-        """Add tool definition and configuration to a ModelInput instance.
-
-        Updates the ModelInput by:
-            1. Adding the Pydantic model schema as a tool definition
-            2. Setting tool_choice to force use of this specific tool
-
-        Args:
-            model_input (ModelInput): The original model input configuration
-
-        Returns:
-            ModelInput: The modified model input with tool configurations added
-        """
-
-        model_input.tools = [self.tool]
-        model_input.tool_choice = ToolChoice(
-            type="tool", name=self.output_model.__name__
-        )
-        return model_input
-
-    def load_results(self):
-        """Load and validate batch inference results against the output schema.
-
-        Reads the output files downloaded from S3 and validates each result against
-        the Pydantic output_model specified during initialization. Populates:
-            - self.results: Raw inference results from the output JSONL file
-            - self.manifest: Statistics about the job execution
-            - self.instances: List of validated Pydantic model instances
-
-        Raises:
-            FileExistsError: If either the results or manifest files are not found locally
-            ValueError: If any result fails schema validation or tool use validation
-
-        Note:
-            - Must call download_results() before calling this method
-            - All results must conform to the specified output_model schema
-            - Results must show successful tool use
-        """
-        super().load_results()
-        self.instances = [
-            {
-                "recordId": result["recordId"],
-                "outputModel": self.validate_result(result["modelOutput"]),
-            }
-            if result.get("modelOutput")
-            else None
-            for result in self.results
-        ]
-
-    def validate_result(
-        self,
-        result: dict,
-    ) -> BaseModel | None:
-        """Validate and parse a single model output against the schema.
-
-        Checks that the model used the specified tool correctly and validates
-        the output against the Pydantic model schema.
-
-        Args:
-            result (dict): The raw model output containing content and metadata
-
-        Returns:
-            BaseModel: An instance of the output_model containing the validated data
-            or None if the return could not be validated.
-
-        Example:
-            >>> result = {"stop_reason": "tool_use",
-            ...          "content": [{"type": "tool_use",
-            ...                      "input": {"name": "John", "age": 30}}]}
-            >>> instance = sbi.validate_result(result)
-            >>> print(instance.name)
-            'John'
-        """
-        if not result["stop_reason"] == "tool_use":
-            self.logger.warning("Validation warning: Model did not use tool")
-            return None
-        if result.get("content", []) == []:
-            self.logger.warning("Validation warning: No content found in response")
-        if not len(result.get("content", [])) == 1:
-            self.logger.warning(
-                "Validation warning: Multiple instances of tool use per execution"
-            )
-            return None
-        if result["content"][0]["type"] == "tool_use":
-            try:
-                output = self.output_model(**result["content"][0]["input"])
-                return output
-            except ValidationError as e:
-                self.logger.warning(
-                    f"Validation warning: Could not validate output {e}"
-                )
-                return None
-
-    @classmethod
-    def recover_details_from_job_arn(
-        cls,
-        job_arn: str,
-        region: str,
-        session: boto3.Session | None = None,
-    ) -> "StructuredBatchInferer":
-        raise TypeError(
-            "Cannot recover structured job without output_model. Use recover_structured_job instead."
-        )
-
-    @classmethod
-    def recover_structured_job(
-        cls,
-        job_arn: str,
-        region: str,
-        output_model: Type[BaseModel],
-        session: boto3.Session | None = None,
-    ) -> "StructuredBatchInferer":
-        """Recover a StructuredBatchInferer instance from an existing job ARN.
-
-        Used to reconstruct a StructuredBatchInferer object when the original Python process
-        has terminated but the AWS job is still running or complete.
-
-        Args:
-            job_arn: (str) The AWS ARN of the existing batch inference job
-            region: (str) the region where the job was scheduled
-            output_model: (Type[BaseModel]) A pydantic model describing the required output
-            session (boto3.Session, optional): A boto3 session to be used for AWS API calls.
-                                           If not provided, a new session will be created.
-
-        Returns:
-            StructuredBatchInferer: A configured instance with the job's details
-
-        Raises:
-            ValueError: If the job cannot be found or response is invalid
-
-        Example:
-            >>> job_arn = "arn:aws:bedrock:region:account:job/xyz123"
-            >>> region = us-east-1"
-            >>> sbi = StructuredBatchInferer.recover_details_from_job_arn(job_arn, region, some_model)
-            >>> sbi.check_complete()
-            'Completed'
-        """
-
-        cls.logger.info(f"Attempting to Recover BatchInferer from {job_arn}")
-        session = session or boto3.Session()
-        response = cls.check_for_existing_job(job_arn, region, session)
-
-        try:
-            # Extract required parameters from response
-            job_name = response["jobName"]
-            model_id = response["modelId"]
-            bucket_name = response["inputDataConfig"]["s3InputDataConfig"][
-                "s3Uri"
-            ].split("/")[2]
-            role_arn = response["roleArn"]
-
-            # Validate required files exist
-            input_file = f"{job_name}.jsonl"
-            if not os.path.exists(input_file):
-                cls.logger.error(f"Required input file not found: {input_file}")
-                raise FileNotFoundError(f"Required input file not found: {input_file}")
-
-            requests = cls._read_jsonl(input_file)
-
-            sbi = cls(
-                model_name=model_id,
-                output_model=output_model,
-                job_name=job_name,
-                region=region,
-                bucket_name=bucket_name,
-                role_arn=role_arn,
-                session=session,
-            )
-            sbi.job_arn = job_arn
-            sbi.requests = requests
-            sbi.job_status = response["status"]
-
-            return sbi
-
-        except (KeyError, IndexError) as e:
-            cls.logger.error(f"Invalid job response format: {str(e)}")
-            raise ValueError(f"Invalid job response format: {str(e)}") from e
-        except Exception as e:
-            cls.logger.error(f"Failed to recover job details: {str(e)}")
-            raise RuntimeError(f"Failed to recover job details: {str(e)}") from e
-
-
-class NameAgeModel(BaseModel):
-    name: str
-    age: int
-
-
-def batch_inference_example():
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
-    )
-
-    load_dotenv()
-    boto3.setup_default_session()
-
-    # Prepare your modelInputs, I think this makes it a bit easier to ensure your model
-    # inputs are correct
-    inputs = {
-        f"{i:03}": ModelInput(
-            temperature=1,
-            top_k=250,
-            messages=[
-                {"role": "user", "content": "Give me a random name, occupation and age"}
-            ],
-        )
-        for i in range(0, 100, 1)
-    }
-
-    bi = BatchInferer(
-        model_name="anthropic.claude-3-haiku-20240307-v1:0",
-        job_name=f"my-first-inference-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
-        region="us-east-1",
-        bucket_name="cddo-af-bedrock-batch-inference-us-east-1",
-        role_arn="arn:aws:iam::992382722318:role/BatchInferenceRole",
-    )
-
-    bi.prepare_requests(inputs)
-    bi.push_requests_to_s3()
-    bi.create()
-    bi.poll_progress(10 * 60)
-    bi.download_results()
-    bi.load_results()
-    print("success")
-
-
-def structured_batch_inference_example():
-    class NameJobAge(BaseModel):
-        """A class to store details about people and their jobs"""
-
-        first_name: str
-        last_name: str
-        age: int
-        occupation: str
-
-    sbi = StructuredBatchInferer(
-        model_name="anthropic.claude-3-haiku-20240307-v1:0",
-        job_name=f"my-first-structured-inference-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
-        region="eu-west-2",
-        bucket_name="cddo-af-bedrock-batch-inference",
-        role_arn="arn:aws:iam::992382722318:role/BatchInferenceRole",
-        output_model=NameJobAge,
-    )
-
-    names_and_that = [
-        item["modelOutput"]["content"][0]["text"]
-        for item in sbi._read_jsonl("my-first-inference-20250115-152412_out.jsonl")
-    ]
-
-    inputs = {
-        f"{index:03}": ModelInput(
-            temperature=0.1,
-            messages=[{"role": "user", "content": item}],
-        )
-        for index, item in enumerate(names_and_that)
-    }
-
-    sbi.prepare_requests(inputs)
-    sbi.push_requests_to_s3()
-    sbi.create()
-    print(sbi.job_arn)
-    sbi.poll_progress(10 * 60)
-    sbi.download_results()
-    sbi.load_results()
-
-
-# Example configuration (should be done in main application entry point)
-def setup_logging(log_level: Optional[str] = "INFO"):
-    logging.basicConfig(
-        level=log_level,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
-
-
-def main():
-    setup_logging(log_level="INFO")  # or get from environment variable
-    logger.info("Starting batch inference process")
-    try:
-        batch_inference_example()
-        logger.info("Successfully completed batch inference")
-    except Exception:
-        logger.error("Batch inference failed", exc_info=True)
-        raise
-
-
-if __name__ == "__main__":
-    main()
