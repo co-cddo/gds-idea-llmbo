@@ -101,13 +101,13 @@ class MistralAdapter(ModelProviderAdapter):
         # Check tool calls was finish reason
         finish_reason = choices[0].get("finish_reason")
         if finish_reason != "tool_calls":
-            cls.logger.debug("Finish reason was not 'tool_choice'")
+            cls.logger.debug("Finish reason was not 'tool_choice'.")
             return None
 
         # Check exactly one tool was called.
         tools = choices[0].get("message", {}).get("tool_calls", [])
         if len(tools) == 0:
-            cls.logger.debug("No tool_calls in message")
+            cls.logger.debug("No tool_calls in message.")
             return None
         if len(tools) > 1:
             cls.logger.debug(f"Too many ({len(tools)}) tools called.")
@@ -117,18 +117,19 @@ class MistralAdapter(ModelProviderAdapter):
         tool_name = tools[0].get("function", {}).get("name", "")
         if tool_name != output_model.__name__:
             cls.logger.debug(
-                f"Wrong tool encountered, expected {output_model.__name__} got {tool_name}"
+                f"Wrong tool encountered, expected {output_model.__name__} got {tool_name}."
             )
             return None
 
         try:
-            arguments = json.loads(tools[0].get("function", {}).get("arguments", {}))
+            arguments = tools[0].get("function", {}).get("arguments", {})
+            parsed_arguments = json.loads(arguments)
         except json.JSONDecodeError:
             cls.logger.debug(f"Failed to parse function arguments as JSON: {arguments}")
             return None
 
         try:
-            validated_model = output_model(**arguments)
+            validated_model = output_model(**parsed_arguments)
             return validated_model
         except ValidationError as e:
             cls.logger.debug(f"Validation failed: {str(e)}")

@@ -103,11 +103,35 @@ def test_validate_result_valid():
     assert result.age == 30
 
 
-# These need editing to reflect the structure of a real call and to check the log
-# to make sure the right message pops up.
-def test_validate_result_no_tool_calls():
+def test_validate_result_bad_message(caplog):
+    """Test the correct None and log is returned for an invalid message."""
+    invalid_result = {"not_choices": {}}
+    with caplog.at_level("DEBUG"):
+        result = MistralAdapter.validate_result(invalid_result, ExampleOutput)
+
+    assert result is None
+    assert "No expected 'choices' key in result." in caplog.text
+
+
+def test_validate_result_no_tool_use(caplog):
+    """Test the correct None and log is returned for an invalid message."""
+    invalid_result = {
+        "choices": [
+            {
+                "finish_reason": "stop",
+            }
+        ]
+    }
+    with caplog.at_level("DEBUG"):
+        result = MistralAdapter.validate_result(invalid_result, ExampleOutput)
+
+    assert result is None
+    assert "Finish reason was not 'tool_choice'" in caplog.text
+
+
+def test_validate_result_empty_tool_calls(caplog):
     """Test validate_result with no tool calls."""
-    invalid_result = valid_result = {
+    invalid_result = {
         "choices": [
             {
                 "finish_reason": "tool_calls",
@@ -118,11 +142,34 @@ def test_validate_result_no_tool_calls():
             }
         ],
     }
-    result = MistralAdapter.validate_result(invalid_result, ExampleOutput)
+    with caplog.at_level("DEBUG"):
+        result = MistralAdapter.validate_result(invalid_result, ExampleOutput)
+
     assert result is None
+    assert "No tool_calls in message" in caplog.text
 
 
-def test_validate_result_wrong_tool():
+def test_validate_result_too_many_tool_calls(caplog):
+    """Test validate_result with no tool calls."""
+    invalid_result = {
+        "choices": [
+            {
+                "finish_reason": "tool_calls",
+                "message": {
+                    "tool_call_id": None,
+                    "tool_calls": [0, 1, 2],
+                },
+            }
+        ],
+    }
+    with caplog.at_level("DEBUG"):
+        result = MistralAdapter.validate_result(invalid_result, ExampleOutput)
+
+    assert result is None
+    assert "Too many (3) tools called." in caplog.text
+
+
+def test_validate_result_wrong_tool(caplog):
     """Test validate_result with wrong tool name."""
     invalid_result = {
         "choices": [
@@ -144,13 +191,53 @@ def test_validate_result_wrong_tool():
         ],
     }
 
-    result = MistralAdapter.validate_result(invalid_result, ExampleOutput)
+    with caplog.at_level("DEBUG"):
+        result = MistralAdapter.validate_result(invalid_result, ExampleOutput)
+
     assert result is None
+    assert (
+        "Wrong tool encountered, expected ExampleOutput got WrongName." in caplog.text
+    )
 
 
-def test_validate_result_invalid_schema():
-    """Test validate_result with schema validation failure."""
-    invalid_result = valid_result = {
+def test_validate_result_invalid_json(caplog):
+    """Test validate_result with bad json.
+
+    age should be an integer, here is is a string.
+    """
+    invalid_result = {
+        "choices": [
+            {
+                "finish_reason": "tool_calls",
+                "message": {
+                    "tool_call_id": None,
+                    "tool_calls": [
+                        {
+                            "function": {
+                                "arguments": '{"name": "John Doe",  "age": 30, "missing"}',
+                                "name": "ExampleOutput",
+                            },
+                            "type": "function",
+                        }
+                    ],
+                },
+            }
+        ],
+    }
+
+    with caplog.at_level("DEBUG"):
+        result = MistralAdapter.validate_result(invalid_result, ExampleOutput)
+
+    assert result is None
+    assert "Failed to parse" in caplog.text
+
+
+def test_validate_result_invalid_schema(caplog):
+    """Test validate_result with schema validation failure.
+
+    age should be an integer, here is is a string.
+    """
+    invalid_result = {
         "choices": [
             {
                 "finish_reason": "tool_calls",
@@ -170,5 +257,8 @@ def test_validate_result_invalid_schema():
         ],
     }
 
-    result = MistralAdapter.validate_result(invalid_result, ExampleOutput)
+    with caplog.at_level("DEBUG"):
+        result = MistralAdapter.validate_result(invalid_result, ExampleOutput)
+
     assert result is None
+    assert "Validation failed:" in caplog.text
