@@ -1,8 +1,8 @@
 [project]
 name = "llmbo-bedrock"
-version = "0.1.8"
+version = "0.2.0"
 description = "Large Language Model Batch Operations"
-readme = "README.md"
+readme = "docs/README.md"
 authors = [
     { name = "David Gillespie", email = "david.gillespie@digital.cabinet-office.gov.uk" }
 ]
