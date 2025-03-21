@@ -70,13 +70,10 @@ class MistralAdapter(ModelProviderAdapter):
                 model_input.messages[0]["content"] = (
                     f"<s>[INST] Reply with a JSON object. {original_prompt + tool} [/INST]"
                 )
-                # model_input.messages[1] = {
-                #     "role": "assistant", "content": f"{"
-                # }
             else:
                 cls.logger.debug("Didnt find any content to adapt")
-                return None
 
+            # Ensure there are no other tools present
             model_input.tools = None
             model_input.tool_choice = None
         return model_input
