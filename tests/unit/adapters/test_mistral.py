@@ -1,6 +1,3 @@
-import json
-import re
-
 from conftest import ExampleOutput
 
 from llmbo.adapters import MistralAdapter
@@ -52,6 +49,7 @@ def test_prepare_model_input_empty_content(caplog):
     with caplog.at_level("DEBUG"):
         result = MistralAdapter.prepare_model_input(model_input, ExampleOutput)
 
+    assert result is None
     assert "Didnt find any content to adapt" in caplog.text
 
 
