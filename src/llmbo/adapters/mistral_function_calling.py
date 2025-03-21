@@ -1,6 +1,5 @@
 import json
 import logging
-import re
 from typing import Any
 
 from pydantic import BaseModel, ValidationError
@@ -9,7 +8,7 @@ from ..models import ModelInput
 from .base import ModelProviderAdapter
 
 
-class MistralAdapter(ModelProviderAdapter):
+class MistralFunctionAdapter(ModelProviderAdapter):
     """Adapter for Mistral models in AWS Bedrock.
 
     This adapter handles:
@@ -18,7 +17,7 @@ class MistralAdapter(ModelProviderAdapter):
     3. Validating tool-use responses from Mistral models
     """
 
-    logger = logging.getLogger(f"{__name__}.MistralAdapter")
+    logger = logging.getLogger(f"{__name__}.MistralFunctionAdapter")
 
     @classmethod
     def build_tool(cls, output_model: type[BaseModel]) -> dict[str, Any]:
@@ -33,11 +32,18 @@ class MistralAdapter(ModelProviderAdapter):
         cls.logger.debug(f"Building tool definition for model: {output_model.__name__}")
 
         schema = output_model.model_json_schema()
-
-        tool = f"""
-        The JSON Structure should be: 
-        {schema}
-        """
+        tool = {
+            "type": "function",
+            "function": {
+                "name": output_model.__name__,
+                "description": schema.get("description", ""),
+                "parameters": {
+                    "type": "object",
+                    "properties": schema.get("properties", {}),
+                    "required": schema.get("required", []),
+                },
+            },
+        }
 
         cls.logger.debug(f"Created tool definition with name: {output_model.__name__}")
         return tool
@@ -64,18 +70,8 @@ class MistralAdapter(ModelProviderAdapter):
         if output_model:
             cls.logger.debug(f"Adding tool definition for {output_model.__name__}")
             tool = cls.build_tool(output_model)
-
-            original_prompt = model_input.messages[0].get("content", "")
-            if original_prompt:
-                model_input.messages[0]["content"] = (
-                    f"<s>[INST] Reply with a JSON object. {original_prompt + tool} [/INST]"
-                )
-            else:
-                cls.logger.debug("Didnt find any content to adapt")
-
-            # Ensure there are no other tools present
-            model_input.tools = None
-            model_input.tool_choice = None
+            model_input.tools = [tool]
+            model_input.tool_choice = "any"
         return model_input
 
     @classmethod
@@ -102,44 +98,38 @@ class MistralAdapter(ModelProviderAdapter):
             cls.logger.debug("No expected 'choices' key in result.")
             return None
 
-        # Check that we stopped on purpose
-        if choices[0].get("finish_reason", "") != "stop":
-            cls.logger.debug("Did not have 'stop' as the finish_reason.")
+        # Check tool calls was finish reason
+        finish_reason = choices[0].get("finish_reason")
+        if finish_reason != "tool_calls":
+            cls.logger.debug("Finish reason was not 'tool_choice'.")
             return None
 
-        # Check that the assistant returned a message
-        if choices[0].get("message", {}).get("role", "") != "assistant":
-            cls.logger.debug("Did not get the expected 'assistant' role.")
+        # Check exactly one tool was called.
+        tools = choices[0].get("message", {}).get("tool_calls", [])
+        if len(tools) == 0:
+            cls.logger.debug("No tool_calls in message.")
+            return None
+        if len(tools) > 1:
+            cls.logger.debug(f"Too many ({len(tools)}) tools called.")
             return None
 
-        # Check the content has something json looking.
-        content = choices[0].get("message", {}).get("content", "")
-        if content:
-            match = re.search(r"\{.*\}", content, re.DOTALL)
-
-        if not match:
+        # Check its the tool we think it is
+        tool_name = tools[0].get("function", {}).get("name", "")
+        if tool_name != output_model.__name__:
             cls.logger.debug(
-                "Didnt find anything that looked like JSON in the response"
+                f"Wrong tool encountered, expected {output_model.__name__} got {tool_name}."
             )
             return None
 
         try:
-            arguments = match.group(0)
+            arguments = tools[0].get("function", {}).get("arguments", {})
             parsed_arguments = json.loads(arguments)
         except json.JSONDecodeError:
             cls.logger.debug(f"Failed to parse function arguments as JSON: {arguments}")
             return None
 
-        tool_name = parsed_arguments.get("title", "")
-        if tool_name != output_model.__name__:
-            cls.logger.debug(
-                f"Wrong schema name in response, "
-                f"expected {output_model.__name__} got {tool_name}"
-            )
-
         try:
             validated_model = output_model(**parsed_arguments)
-            cls.logger.debug("Validation successful.")
             return validated_model
         except ValidationError as e:
             cls.logger.debug(f"Validation failed: {str(e)}")

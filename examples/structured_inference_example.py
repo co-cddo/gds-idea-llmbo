@@ -24,26 +24,42 @@ class Dog(BaseModel):
     age: int
 
 
+class ListDogs(BaseModel):
+    """A list of random dogs"""
+
+    dogs: list[Dog]
+
+
 inputs = {
     f"{i:03}": ModelInput(
         temperature=1,
-        messages=[{"role": "user", "content": "I ❤ dogs! Give me a random dog."}],
+        messages=[
+            {
+                "role": "user",
+                "content": "I ❤ dogs! Give me 3 random dogs using the output schema.",
+            }
+        ],
     )
     for i in range(0, 100, 1)
 }
 
 sbi = StructuredBatchInferer(
-    model_name="anthropic.claude-3-haiku-20240307-v1:0",
-    job_name="test-i-didnt-break-anthropic-1",
-    region="eu-west-2",
-    bucket_name="cddo-af-bedrock-batch-inference-eu-west-2",
+    model_name="mistral.mistral-large-2407-v1:0",
+    job_name="mistral-more-complicated-model-3",
+    region="us-west-2",
+    bucket_name="cddo-af-bedrock-batch-inference-us-west-2",
     role_arn="arn:aws:iam::992382722318:role/BatchInferenceRole",
-    output_model=Dog,
+    output_model=ListDogs,
 )
 
 sbi.auto(inputs, poll_time_secs=15)
 
 sbi.instances[0]
-# {'recordId': '000',
-#  'outputModel': Dog(name='Buddy', breed='Labrador Retriever', age=5)
+# {
+#   'recordId': '000',
+#   'outputModel': ListDogs(dogs=[
+#       Dog(name='Max', breed='Golden Retriever', age=3),
+#       Dog(name='Bella', breed='Labrador', age=5)
+#       Dog(name='Bella', br...harlie', breed='German Shepherd', age=2)]
+#   )
 # }
