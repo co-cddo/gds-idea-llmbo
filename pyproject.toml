@@ -1,6 +1,6 @@
 [project]
 name = "llmbo-bedrock"
-version = "0.2.0"
+version = "0.2.1"
 description = "Large Language Model Batch Operations"
 readme = "docs/README.md"
 authors = [
@@ -48,3 +48,9 @@ where = ["src"]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 addopts = "-v --cov=llmbo"
+
+[[tool.uv.index]]
+name = "llmbo-bedrock"
+url = "https://upload.pypi.org/legacy/?llmbo-bedrock"
+publish-url = "https://upload.pypi.org/legacy/?llmbo-bedrock"
+explicit = true
