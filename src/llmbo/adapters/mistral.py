@@ -75,6 +75,7 @@ class MistralAdapter(ModelProviderAdapter):
                 # }
             else:
                 cls.logger.debug("Didnt find any content to adapt")
+                return None
 
             model_input.tools = None
             model_input.tool_choice = None
