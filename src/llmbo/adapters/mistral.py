@@ -9,7 +9,7 @@ from ..models import ModelInput
 from .base import ModelProviderAdapter
 
 
-class MistralFunctionAdapter(ModelProviderAdapter):
+class MistralAdapter(ModelProviderAdapter):
     """Adapter for Mistral models in AWS Bedrock.
 
     This adapter handles:
