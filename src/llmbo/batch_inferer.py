@@ -14,7 +14,13 @@ from .registry import ModelAdapterRegistry
 logger = logging.getLogger(__name__)
 
 
-VALID_FINISHED_STATUSES = ["Completed", "Failed", "Stopped", "Expired"]
+VALID_FINISHED_STATUSES = [
+    "Completed",
+    "Failed",
+    "Stopped",
+    "Expired",
+    "PartiallyCompleted",
+]
 
 
 class BatchInferer:

@@ -1,6 +1,6 @@
 from conftest import ExampleOutput
 
-from llmbo.adapters import MistralAdapter
+from llmbo.adapters import MistralFunctionAdapter
 from llmbo.models import ModelInput
 
 # expected_tool_definition = {
@@ -45,7 +45,7 @@ from llmbo.models import ModelInput
 
 def test_build_tool():
     """Test building a tool definition for Mistral."""
-    tool = MistralAdapter.build_tool(ExampleOutput)
+    tool = MistralFunctionAdapter.build_tool(ExampleOutput)
 
     # Verify the tool structure
     assert tool["type"] == "function"
@@ -64,11 +64,11 @@ def test_prepare_model_input():
     )
 
     # Prepare for regular use
-    result = MistralAdapter.prepare_model_input(model_input)
+    result = MistralFunctionAdapter.prepare_model_input(model_input)
     assert result.anthropic_version is None
 
     # Prepare with schema
-    result = MistralAdapter.prepare_model_input(model_input, ExampleOutput)
+    result = MistralFunctionAdapter.prepare_model_input(model_input, ExampleOutput)
     assert result.tools is not None
     assert len(result.tools) == 1
     assert result.tools[0]["type"] == "function"
@@ -97,7 +97,7 @@ def test_validate_result_valid():
         ],
     }
 
-    result = MistralAdapter.validate_result(valid_result, ExampleOutput)
+    result = MistralFunctionAdapter.validate_result(valid_result, ExampleOutput)
     assert isinstance(result, ExampleOutput)
     assert result.name == "John Doe"
     assert result.age == 30
@@ -107,7 +107,7 @@ def test_validate_result_bad_message(caplog):
     """Test the correct None and log is returned for an invalid message."""
     invalid_result = {"not_choices": {}}
     with caplog.at_level("DEBUG"):
-        result = MistralAdapter.validate_result(invalid_result, ExampleOutput)
+        result = MistralFunctionAdapter.validate_result(invalid_result, ExampleOutput)
 
     assert result is None
     assert "No expected 'choices' key in result." in caplog.text
@@ -123,7 +123,7 @@ def test_validate_result_no_tool_use(caplog):
         ]
     }
     with caplog.at_level("DEBUG"):
-        result = MistralAdapter.validate_result(invalid_result, ExampleOutput)
+        result = MistralFunctionAdapter.validate_result(invalid_result, ExampleOutput)
 
     assert result is None
     assert "Finish reason was not 'tool_choice'" in caplog.text
@@ -143,7 +143,7 @@ def test_validate_result_empty_tool_calls(caplog):
         ],
     }
     with caplog.at_level("DEBUG"):
-        result = MistralAdapter.validate_result(invalid_result, ExampleOutput)
+        result = MistralFunctionAdapter.validate_result(invalid_result, ExampleOutput)
 
     assert result is None
     assert "No tool_calls in message" in caplog.text
@@ -163,7 +163,7 @@ def test_validate_result_too_many_tool_calls(caplog):
         ],
     }
     with caplog.at_level("DEBUG"):
-        result = MistralAdapter.validate_result(invalid_result, ExampleOutput)
+        result = MistralFunctionAdapter.validate_result(invalid_result, ExampleOutput)
 
     assert result is None
     assert "Too many (3) tools called." in caplog.text
@@ -192,7 +192,7 @@ def test_validate_result_wrong_tool(caplog):
     }
 
     with caplog.at_level("DEBUG"):
-        result = MistralAdapter.validate_result(invalid_result, ExampleOutput)
+        result = MistralFunctionAdapter.validate_result(invalid_result, ExampleOutput)
 
     assert result is None
     assert (
@@ -226,7 +226,7 @@ def test_validate_result_invalid_json(caplog):
     }
 
     with caplog.at_level("DEBUG"):
-        result = MistralAdapter.validate_result(invalid_result, ExampleOutput)
+        result = MistralFunctionAdapter.validate_result(invalid_result, ExampleOutput)
 
     assert result is None
     assert "Failed to parse" in caplog.text
@@ -258,7 +258,7 @@ def test_validate_result_invalid_schema(caplog):
     }
 
     with caplog.at_level("DEBUG"):
-        result = MistralAdapter.validate_result(invalid_result, ExampleOutput)
+        result = MistralFunctionAdapter.validate_result(invalid_result, ExampleOutput)
 
     assert result is None
     assert "Validation failed:" in caplog.text
