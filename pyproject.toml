@@ -1,6 +1,6 @@
 [project]
 name = "llmbo-bedrock"
-version = "0.2.1"
+version = "0.2.2"
 description = "Large Language Model Batch Operations"
 readme = "docs/README.md"
 authors = [
