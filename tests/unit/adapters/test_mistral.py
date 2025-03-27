@@ -25,18 +25,38 @@ def test_prepare_model_input():
     # Prepare for regular use without output model
     result = MistralAdapter.prepare_model_input(model_input)
     assert result.anthropic_version is None
-    assert result.messages[0]["content"] == "Test"  # Should not be modified
+    assert result.system is None
+    assert result.messages[0]["content"] == "<s>[INST]Test [/INST]"
 
+
+def test_prepare_model_input_with_tool():
+    model_input = ModelInput(
+        messages=[{"role": "user", "content": "Test"}],
+        anthropic_version="bedrock-2023-05-31",
+    )
     # Prepare with schema
     result = MistralAdapter.prepare_model_input(model_input, ExampleOutput)
     assert result.anthropic_version is None
     assert result.tools is None  # Tools are not used in this approach
     assert result.tool_choice is None
+    assert result.system is None
     # Check that content was wrapped properly
-    assert result.messages[0]["content"].startswith(
-        "<s>[INST] Reply with a JSON object."
+    content = result.messages[0]["content"]
+    assert content.startswith("<s>[INST]Reply with a JSON object.")
+    assert content.endswith("[/INST]")
+    assert "The JSON Structure should be:" in content
+
+
+def test_prepare_model_input_with_system():
+    SYSTEM = "SHOULD BE MOVED"
+    model_input = ModelInput(
+        messages=[{"role": "user", "content": "Test"}], system=SYSTEM
     )
-    assert "The JSON Structure should be:" in result.messages[0]["content"]
+    result = MistralAdapter.prepare_model_input(model_input, ExampleOutput)
+
+    assert result.system is None
+    assert SYSTEM in result.messages[0]["content"]
+    assert result.messages[0]["content"].startswith("<s>[INST]")
     assert result.messages[0]["content"].endswith("[/INST]")
 
 

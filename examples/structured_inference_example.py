@@ -32,7 +32,8 @@ class ListDogs(BaseModel):
 
 inputs = {
     f"{i:03}": ModelInput(
-        temperature=1,
+        temperature=0.1,
+        system="You are an expert in all kinds of dogs, not just labradors.",
         messages=[
             {
                 "role": "user",
@@ -45,7 +46,7 @@ inputs = {
 
 sbi = StructuredBatchInferer(
     model_name="mistral.mistral-large-2407-v1:0",
-    job_name="mistral-more-complicated-model-3",
+    job_name="mistral-more-complicated-model-with-system-3-low-temp",
     region="us-west-2",
     bucket_name="cddo-af-bedrock-batch-inference-us-west-2",
     role_arn="arn:aws:iam::992382722318:role/BatchInferenceRole",
@@ -53,7 +54,7 @@ sbi = StructuredBatchInferer(
 )
 
 sbi.auto(inputs, poll_time_secs=15)
-
+print(len([r for r in sbi.instances if r["outputModel"] is None]))
 sbi.instances[0]
 # {
 #   'recordId': '000',

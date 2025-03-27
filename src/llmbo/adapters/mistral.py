@@ -20,6 +20,38 @@ class MistralAdapter(ModelProviderAdapter):
 
     logger = logging.getLogger(f"{__name__}.MistralAdapter")
 
+    @staticmethod
+    def format_mistral_prompt(
+        user_prompt: str, system_prompt: str = None, tools: str = None
+    ) -> str:
+        """
+        Formats the user prompt, system prompt, and tool definitions for Mistral models.
+
+        Parameters:
+        - user_prompt (str): The user's input or question.
+        - system_prompt (str, optional): The system's instructions or guidelines. Defaults to None.
+        - tools (str, optional): Schema description. Defaults to None.
+
+        Returns:
+        - str: The formatted prompt ready for input into the Mistral model.
+        """
+        prompt_parts = ["<s>[INST]"]
+
+        if tools:
+            prompt_parts.append(
+                "Reply with a JSON object. Reply only with the valid JSON object. "
+                "The JSON object should follow the supplied schema. "
+            )
+
+        if system_prompt:
+            prompt_parts.append(f"<<SYS>>\n{system_prompt}\n<</SYS>>\n")
+
+        if tools:
+            prompt_parts.append(f"{tools}\n")
+
+        prompt_parts.append(f"{user_prompt} [/INST]")
+        return "".join(prompt_parts)
+
     @classmethod
     def build_tool(cls, output_model: type[BaseModel]) -> dict[str, Any]:
         """Build a tool definition in Mistral's format.
@@ -34,10 +66,7 @@ class MistralAdapter(ModelProviderAdapter):
 
         schema = output_model.model_json_schema()
 
-        tool = f"""
-        The JSON Structure should be: 
-        {schema}
-        """
+        tool = f"""The JSON Structure should be:\n\n\n{schema}\n\n\n"""
 
         cls.logger.debug(f"Created tool definition with name: {output_model.__name__}")
         return tool
@@ -57,25 +86,28 @@ class MistralAdapter(ModelProviderAdapter):
         """
         cls.logger.debug("Preparing model input for Mistral")
 
-        # Mistral doesn't use anthropic_version, remove if set
-        model_input.anthropic_version = None
+        original_prompt = model_input.messages[0].get("content", "")
+        if not original_prompt:
+            cls.logger.debug("Didnt find any content to adapt")
 
         # Build tool from output_model and add it to model_input
         if output_model:
             cls.logger.debug(f"Adding tool definition for {output_model.__name__}")
             tool = cls.build_tool(output_model)
+        else:
+            tool = None
 
-            original_prompt = model_input.messages[0].get("content", "")
-            if original_prompt:
-                model_input.messages[0]["content"] = (
-                    f"<s>[INST] Reply with a JSON object. {original_prompt + tool} [/INST]"
-                )
-            else:
-                cls.logger.debug("Didnt find any content to adapt")
+        model_input.messages[0]["content"] = cls.format_mistral_prompt(
+            original_prompt, model_input.system, tool
+        )
 
-            # Ensure there are no other tools present
-            model_input.tools = None
-            model_input.tool_choice = None
+        # Mistral doesn't use anthropic_version, remove if set
+        model_input.anthropic_version = None
+        # It also doesnt support tools like this
+        model_input.tools = None
+        model_input.tool_choice = None
+        # Or a system prompt
+        model_input.system = None
         return model_input
 
     @classmethod
