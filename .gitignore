@@ -175,3 +175,6 @@ cython_debug/
 
 .env
 *.jsonl*
+
+# hatch-vcs auto-generated version file
+src/llmbo/_version.py

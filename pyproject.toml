@@ -1,6 +1,6 @@
 [project]
 name = "llmbo-bedrock"
-version = "0.2.2"
+dynamic = ["version"]
 description = "Large Language Model Batch Operations"
 readme = "docs/README.md"
 authors = [
@@ -21,8 +21,14 @@ Issues = "https://github.com/co-cddo/gds-idea-llmbo/issues"
 # Changelog = "https://github.com/me/spam/blob/master/CHANGELOG.md"
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.build.hooks.vcs]
+version-file = "src/llmbo/_version.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/llmbo"]
