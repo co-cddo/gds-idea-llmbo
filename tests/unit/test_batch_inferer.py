@@ -1,4 +1,4 @@
-from unittest.mock import AsyncMock, MagicMock, call
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 
@@ -99,3 +99,51 @@ def test_prepare_requests_bad_batch_size(
         ValueError, match=f"Minimum Batch Size is 100, {len(small_inputs)} given"
     ):
         batch_inferer.prepare_requests(small_inputs)
+
+
+def test_load_results_with_unknown_manifest_fields(
+    batch_inferer: BatchInferer,
+):
+    """Test that load_results succeeds when manifest contains unknown fields.
+
+    AWS Bedrock may add new fields (e.g. inputAudioSecond) to the manifest.
+    These should be silently ignored rather than causing a TypeError.
+    """
+    mock_results = [{"recordId": "001", "modelOutput": {"content": "test"}}]
+    mock_manifest = [
+        {
+            "totalRecordCount": 100,
+            "processedRecordCount": 95,
+            "successRecordCount": 90,
+            "errorRecordCount": 5,
+            "inputTokenCount": 50_000,
+            "outputTokenCount": 100_000,
+            "inputAudioSecond": 42,
+            "someUnexpectedField": "value",
+        }
+    ]
+
+    batch_inferer.output_file_name = "test-job_out.jsonl"
+    batch_inferer.manifest_file_name = "test-job_manifest.jsonl"
+
+    def mock_read_jsonl(file_path):
+        if "manifest" in file_path:
+            return mock_manifest
+        return mock_results
+
+    with (
+        patch.object(BatchInferer, "_read_jsonl", side_effect=mock_read_jsonl),
+        patch("os.path.isfile", return_value=True),
+    ):
+        batch_inferer.load_results()
+
+    assert batch_inferer.manifest is not None
+    assert batch_inferer.manifest.totalRecordCount == 100
+    assert batch_inferer.manifest.successRecordCount == 90
+    assert batch_inferer.manifest.inputTokenCount == 50_000
+    assert batch_inferer.manifest.outputTokenCount == 100_000
+    assert batch_inferer.manifest.model_extra == {
+        "inputAudioSecond": 42,
+        "someUnexpectedField": "value",
+    }
+    assert batch_inferer.results == mock_results

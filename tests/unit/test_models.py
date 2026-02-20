@@ -38,6 +38,36 @@ def test_optional_instantiation():
     assert manifest.outputTokenCount is None
 
 
+def test_manifest_allows_unknown_fields():
+    """Test that Manifest accepts unknown fields via Pydantic extra='allow'.
+
+    AWS Bedrock may return new fields (e.g. inputAudioSecond) that are not
+    defined on the Manifest model. These should be captured in model_extra
+    rather than raising a validation error.
+    """
+    manifest = Manifest(
+        totalRecordCount=200,
+        processedRecordCount=180,
+        successRecordCount=170,
+        errorRecordCount=10,
+        inputTokenCount=500_000,
+        outputTokenCount=1_000_000,
+        inputAudioSecond=42,
+        someNewField="unexpected",
+    )
+
+    assert manifest.totalRecordCount == 200
+    assert manifest.processedRecordCount == 180
+    assert manifest.successRecordCount == 170
+    assert manifest.errorRecordCount == 10
+    assert manifest.inputTokenCount == 500_000
+    assert manifest.outputTokenCount == 1_000_000
+    assert manifest.model_extra == {
+        "inputAudioSecond": 42,
+        "someNewField": "unexpected",
+    }
+
+
 def test_modelinput_to_dict_with_tool_choice_model():
     """Test that a normal instantiation works correctly.
 
