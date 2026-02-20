@@ -147,3 +147,151 @@ def test_load_results_with_unknown_manifest_fields(
         "someUnexpectedField": "value",
     }
     assert batch_inferer.results == mock_results
+
+
+def test_init_default_output_dir(batch_inferer: BatchInferer):
+    """Test that output_dir defaults to current directory."""
+    assert batch_inferer.output_dir == "."
+
+
+def test_init_custom_output_dir(mock_boto3_session: MagicMock):
+    """Test that a custom output_dir is stored and created."""
+    with patch("os.makedirs") as mock_makedirs:
+        bi = BatchInferer(
+            model_name="test-supported-claude-model",
+            bucket_name="test-bucket",
+            region="test-region",
+            job_name="test-job",
+            role_arn="arn:aws:iam::123456789012:role/TestRole",
+            output_dir="my_outputs",
+        )
+        assert bi.output_dir == "my_outputs"
+        mock_makedirs.assert_called_with("my_outputs", exist_ok=True)
+
+
+def test_local_path_default(batch_inferer: BatchInferer):
+    """Test _local_path joins output_dir with bare filename."""
+    assert batch_inferer._local_path("foo.jsonl") == "./foo.jsonl"
+
+
+def test_local_path_custom(mock_boto3_session: MagicMock):
+    """Test _local_path with a custom output_dir."""
+    bi = BatchInferer(
+        model_name="test-supported-claude-model",
+        bucket_name="test-bucket",
+        region="test-region",
+        job_name="test-job",
+        role_arn="arn:aws:iam::123456789012:role/TestRole",
+        output_dir="my_dir",
+    )
+    assert bi._local_path("foo.jsonl") == "my_dir/foo.jsonl"
+
+
+def test_write_requests_locally_uses_output_dir(mock_boto3_session: MagicMock):
+    """Test that _write_requests_locally writes to output_dir."""
+    bi = BatchInferer(
+        model_name="test-supported-claude-model",
+        bucket_name="test-bucket",
+        region="test-region",
+        job_name="test-job",
+        role_arn="arn:aws:iam::123456789012:role/TestRole",
+        output_dir="my_outputs",
+    )
+    bi.requests = [{"recordId": "001", "modelInput": {"messages": []}}]
+
+    mock_open = MagicMock()
+    with patch("builtins.open", mock_open):
+        bi._write_requests_locally()
+
+    mock_open.assert_called_once_with("my_outputs/test-job.jsonl", "w")
+
+
+def test_push_requests_uses_output_dir_for_local_but_not_s3(
+    mock_boto3_session: MagicMock,
+    mock_s3_client: MagicMock,
+):
+    """Test that push_requests_to_s3 uses output_dir for local file but bare name for S3 key."""
+    bi = BatchInferer(
+        model_name="test-supported-claude-model",
+        bucket_name="test-bucket",
+        region="test-region",
+        job_name="test-job",
+        role_arn="arn:aws:iam::123456789012:role/TestRole",
+        output_dir="my_outputs",
+    )
+    bi.requests = [{"recordId": "001", "modelInput": {"messages": []}}]
+
+    with patch("builtins.open", MagicMock()):
+        bi.push_requests_to_s3()
+
+    mock_s3_client.upload_file.assert_called_once_with(
+        Filename="my_outputs/test-job.jsonl",
+        Bucket="test-bucket",
+        Key="input/test-job.jsonl",
+        ExtraArgs={"ContentType": "application/json"},
+    )
+
+
+def test_download_results_uses_output_dir(
+    mock_boto3_session: MagicMock,
+    mock_s3_client: MagicMock,
+    mock_bedrock_client: MagicMock,
+):
+    """Test that download_results writes to output_dir but uses bare S3 keys."""
+    bi = BatchInferer(
+        model_name="test-supported-claude-model",
+        bucket_name="test-bucket",
+        region="test-region",
+        job_name="test-job",
+        role_arn="arn:aws:iam::123456789012:role/TestRole",
+        output_dir="my_outputs",
+    )
+    bi.job_arn = "arn:aws:bedrock:region:account:job/test-id"
+    bi.job_status = "Completed"
+
+    bi.download_results()
+
+    mock_s3_client.download_file.assert_any_call(
+        Bucket="test-bucket",
+        Key="output/test-id/test-job.jsonl.out",
+        Filename="my_outputs/test-job_out.jsonl",
+    )
+    mock_s3_client.download_file.assert_any_call(
+        Bucket="test-bucket",
+        Key="output/test-id/manifest.json.out",
+        Filename="my_outputs/test-job_manifest.jsonl",
+    )
+
+
+def test_load_results_uses_output_dir(batch_inferer: BatchInferer):
+    """Test that load_results reads from output_dir paths."""
+    batch_inferer.output_file_name = "test-job_out.jsonl"
+    batch_inferer.manifest_file_name = "test-job_manifest.jsonl"
+
+    mock_results = [{"recordId": "001", "modelOutput": {"content": "test"}}]
+    mock_manifest = [
+        {
+            "totalRecordCount": 10,
+            "processedRecordCount": 10,
+            "successRecordCount": 10,
+            "errorRecordCount": 0,
+        }
+    ]
+
+    def mock_read_jsonl(file_path):
+        if "manifest" in file_path:
+            return mock_manifest
+        return mock_results
+
+    def mock_isfile(path):
+        """Verify that isfile is called with output_dir-prefixed paths."""
+        return path in ("./test-job_out.jsonl", "./test-job_manifest.jsonl")
+
+    with (
+        patch.object(BatchInferer, "_read_jsonl", side_effect=mock_read_jsonl),
+        patch("os.path.isfile", side_effect=mock_isfile),
+    ):
+        batch_inferer.load_results()
+
+    assert batch_inferer.results == mock_results
+    assert batch_inferer.manifest is not None

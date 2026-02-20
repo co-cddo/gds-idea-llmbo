@@ -60,6 +60,7 @@ class BatchInferer:
         role_arn: str,
         time_out_duration_hours: int = 24,
         session: boto3.Session | None = None,
+        output_dir: str = ".",
     ):
         """Initialize a BatchInferer for AWS Bedrock batch processing.
 
@@ -77,6 +78,9 @@ class BatchInferer:
                 Defaults to 24 hours.
             session (boto3.session, optional): A boto3 session to be used for AWS calls,
                 If one if not provided a new one will be created
+            output_dir (str, optional): Directory for local JSONL files (input, output,
+                manifest). Defaults to "." (current working directory). The directory
+                is created if it does not exist.
 
         Raises:
             KeyError: If AWS_PROFILE environment variable is not set
@@ -114,6 +118,8 @@ class BatchInferer:
         self.file_name = job_name + ".jsonl"
         self.output_file_name = None
         self.manifest_file_name = None
+        self.output_dir = output_dir
+        os.makedirs(self.output_dir, exist_ok=True)
 
         self.check_for_profile()
         self._check_arn(role_arn)
@@ -145,6 +151,10 @@ class BatchInferer:
             self.logger.error("Job ARN not set")
             raise ValueError("Job ARN not set")
         return self.job_arn.split("/")[-1]
+
+    def _local_path(self, bare_name: str) -> str:
+        """Join output_dir with a bare filename for local file operations."""
+        return os.path.join(self.output_dir, bare_name)
 
     def check_for_profile(self) -> None:
         """Checks if a profile has been set.
@@ -343,8 +353,8 @@ class BatchInferer:
             - Internal method used by push_requests_to_s3()
             - Will overwrite existing files with the same name
         """
-        self.logger.info(f"Writing {len(self.requests)} requests to {self.file_name}")
-        with open(self.file_name, "w") as file:
+        self.logger.info(f"Writing {len(self.requests)} requests to {self._local_path(self.file_name)}")
+        with open(self._local_path(self.file_name), "w") as file:
             for record in self.requests:
                 file.write(json.dumps(record) + "\n")
 
@@ -373,7 +383,7 @@ class BatchInferer:
         s3_client = self.session.client("s3")
         self.logger.info(f"Pushing {len(self.requests)} requests to {self.bucket_name}")
         response = s3_client.upload_file(
-            Filename=self.file_name,
+            Filename=self._local_path(self.file_name),
             Bucket=self.bucket_name,
             Key=f"input/{self.file_name}",
             ExtraArgs={"ContentType": "application/json"},
@@ -477,16 +487,16 @@ class BatchInferer:
             s3_client.download_file(
                 Bucket=self.bucket_name,
                 Key=f"output/{self.unique_id_from_arn}/{self.file_name}.out",
-                Filename=self.output_file_name,
+                Filename=self._local_path(self.output_file_name),
             )
-            self.logger.info(f"Downloaded results file to {self.output_file_name}")
+            self.logger.info(f"Downloaded results file to {self._local_path(self.output_file_name)}")
 
             s3_client.download_file(
                 Bucket=self.bucket_name,
                 Key=f"output/{self.unique_id_from_arn}/manifest.json.out",
-                Filename=self.manifest_file_name,
+                Filename=self._local_path(self.manifest_file_name),
             )
-            self.logger.info(f"Downloaded manifest file to {self.manifest_file_name}")
+            self.logger.info(f"Downloaded manifest file to {self._local_path(self.manifest_file_name)}")
         else:
             self.logger.info(
                 f"Job:{self.job_arn} was not marked one of {VALID_FINISHED_STATUSES}, could not download."
@@ -510,11 +520,13 @@ class BatchInferer:
             - Must call download_results() before calling this method
             - The manifest provides useful metrics like success rate and token counts
         """
-        if os.path.isfile(self.output_file_name) and os.path.isfile(
-            self.manifest_file_name
+        if os.path.isfile(self._local_path(self.output_file_name)) and os.path.isfile(
+            self._local_path(self.manifest_file_name)
         ):
-            self.results = self._read_jsonl(self.output_file_name)
-            self.manifest = Manifest(**self._read_jsonl(self.manifest_file_name)[0])
+            self.results = self._read_jsonl(self._local_path(self.output_file_name))
+            self.manifest = Manifest(
+                **self._read_jsonl(self._local_path(self.manifest_file_name))[0]
+            )
         else:
             self.logger.error(
                 "Result files do not exist, you may need to call .download_results() first."
@@ -610,7 +622,11 @@ class BatchInferer:
 
     @classmethod
     def recover_details_from_job_arn(
-        cls, job_arn: str, region: str, session: boto3.Session | None = None
+        cls,
+        job_arn: str,
+        region: str,
+        session: boto3.Session | None = None,
+        output_dir: str = ".",
     ) -> "BatchInferer":
         """Recover a BatchInferer instance from an existing job ARN.
 
@@ -622,6 +638,7 @@ class BatchInferer:
             region: (str) the region where the job was scheduled
             session (boto3.session, optional): A boto3 session to be used for calls to AWS,
                     If one if not provided a new one will be  created
+            output_dir (str, optional): Directory for local JSONL files. Defaults to ".".
 
         Returns:
             BatchInferer: A configured instance with the job's details
@@ -649,7 +666,7 @@ class BatchInferer:
             role_arn = response["roleArn"]
 
             # Validate required files exist
-            input_file = f"{job_name}.jsonl"
+            input_file = os.path.join(output_dir, f"{job_name}.jsonl")
             if not os.path.exists(input_file):
                 cls.logger.error(f"Required input file not found: {input_file}")
                 raise FileNotFoundError(f"Required input file not found: {input_file}")
@@ -663,6 +680,7 @@ class BatchInferer:
                 bucket_name=bucket_name,
                 role_arn=role_arn,
                 session=session,
+                output_dir=output_dir,
             )
             bi.job_arn = job_arn
             bi.requests = requests

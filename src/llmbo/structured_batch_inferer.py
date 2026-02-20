@@ -41,6 +41,7 @@ class StructuredBatchInferer(BatchInferer):
         role_arn: str,
         time_out_duration_hours: int = 24,
         session: boto3.Session | None = None,
+        output_dir: str = ".",
     ):
         """Initialize a StructuredBatchInferer for schema-validated batch processing.
 
@@ -56,7 +57,9 @@ class StructuredBatchInferer(BatchInferer):
             job_name (str): Unique identifier for this batch job
             role_arn (str): AWS IAM role ARN with permissions for Bedrock and S3 access
             time_out_duration_hours (int): Number of hours before the job times out
-            session (boto3.Session, optional): A boto3 session to be used for AWS API calls. If not provided, a new session will be created.
+            session (boto3.Session, optional): A boto3 session to be used for AWS API calls.
+                If not provided, a new session will be created.
+            output_dir (str, optional): Directory for local JSONL files. Defaults to ".".
 
         Raises:
             KeyError: If AWS_PROFILE environment variable is not set
@@ -95,6 +98,7 @@ class StructuredBatchInferer(BatchInferer):
             role_arn=role_arn,
             time_out_duration_hours=time_out_duration_hours,
             session=session,
+            output_dir=output_dir,
         )
 
     def prepare_requests(self, inputs: dict[str, ModelInput]):
@@ -174,6 +178,7 @@ class StructuredBatchInferer(BatchInferer):
         job_arn: str,
         region: str,
         session: boto3.Session | None = None,
+        output_dir: str = ".",
     ) -> "StructuredBatchInferer":
         """Placeholder method for interface consistency.
 
@@ -196,6 +201,7 @@ class StructuredBatchInferer(BatchInferer):
         region: str,
         output_model: type[BaseModel],
         session: boto3.Session | None = None,
+        output_dir: str = ".",
     ) -> "StructuredBatchInferer":
         """Recover a StructuredBatchInferer instance from an existing job ARN.
 
@@ -205,9 +211,10 @@ class StructuredBatchInferer(BatchInferer):
         Args:
             job_arn: (str) The AWS ARN of the existing batch inference job
             region: (str) the region where the job was scheduled
-            output_model: (Type[BaseModel]) A pydantic model describing the required output
+            output_model: (type[BaseModel]) A pydantic model describing the required output
             session (boto3.Session, optional): A boto3 session to be used for AWS API calls.
-                                           If not provided, a new session will be created.
+                                            If not provided, a new session will be created.
+            output_dir (str, optional): Directory for local JSONL files. Defaults to ".".
 
         Returns:
             StructuredBatchInferer: A configured instance with the job's details
@@ -218,7 +225,7 @@ class StructuredBatchInferer(BatchInferer):
         Example:
             >>> job_arn = "arn:aws:bedrock:region:account:job/xyz123"
             >>> region = us-east-1"
-            >>> sbi = StructuredBatchInferer.recover_details_from_job_arn(job_arn, region, some_model)
+            >>> sbi = StructuredBatchInferer.recover_structured_job(job_arn, region, some_model)
             >>> sbi.check_complete()
             'Completed'
         """
@@ -236,7 +243,7 @@ class StructuredBatchInferer(BatchInferer):
             role_arn = response["roleArn"]
 
             # Validate required files exist
-            input_file = f"{job_name}.jsonl"
+            input_file = os.path.join(output_dir, f"{job_name}.jsonl")
             if not os.path.exists(input_file):
                 cls.logger.error(f"Required input file not found: {input_file}")
                 raise FileNotFoundError(f"Required input file not found: {input_file}")
@@ -251,6 +258,7 @@ class StructuredBatchInferer(BatchInferer):
                 bucket_name=bucket_name,
                 role_arn=role_arn,
                 session=session,
+                output_dir=output_dir,
             )
             sbi.job_arn = job_arn
             sbi.requests = requests
