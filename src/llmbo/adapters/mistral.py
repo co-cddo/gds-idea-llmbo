@@ -21,9 +21,7 @@ class MistralAdapter(ModelProviderAdapter):
     logger = logging.getLogger(f"{__name__}.MistralAdapter")
 
     @staticmethod
-    def format_mistral_prompt(
-        user_prompt: str, system_prompt: str = None, tools: str = None
-    ) -> str:
+    def format_mistral_prompt(user_prompt: str, system_prompt: str | None = None, tools: str | None = None) -> str:
         """
         Formats the user prompt, system prompt, and tool definitions for Mistral models.
 
@@ -72,9 +70,7 @@ class MistralAdapter(ModelProviderAdapter):
         return tool
 
     @classmethod
-    def prepare_model_input(
-        cls, model_input: ModelInput, output_model: type[BaseModel] | None = None
-    ) -> ModelInput:
+    def prepare_model_input(cls, model_input: ModelInput, output_model: type[BaseModel] | None = None) -> ModelInput:
         """Prepare model input for Mistral models.
 
         Args:
@@ -97,9 +93,7 @@ class MistralAdapter(ModelProviderAdapter):
         else:
             tool = None
 
-        model_input.messages[0]["content"] = cls.format_mistral_prompt(
-            original_prompt, model_input.system, tool
-        )
+        model_input.messages[0]["content"] = cls.format_mistral_prompt(original_prompt, model_input.system, tool)
 
         # Mistral doesn't use anthropic_version, remove if set
         model_input.anthropic_version = None
@@ -111,9 +105,7 @@ class MistralAdapter(ModelProviderAdapter):
         return model_input
 
     @classmethod
-    def validate_result(
-        cls, result: dict[str, Any], output_model: type[BaseModel]
-    ) -> BaseModel | None:
+    def validate_result(cls, result: dict[str, Any], output_model: type[BaseModel]) -> BaseModel | None:
         """Validate and parse output from Mistral models.
 
         Extracts structured data from Mistral's tool-use response format and
@@ -150,9 +142,7 @@ class MistralAdapter(ModelProviderAdapter):
             match = re.search(r"\{.*\}", content, re.DOTALL)
 
         if not match:
-            cls.logger.debug(
-                "Didnt find anything that looked like JSON in the response"
-            )
+            cls.logger.debug("Didnt find anything that looked like JSON in the response")
             return None
 
         try:
@@ -164,15 +154,12 @@ class MistralAdapter(ModelProviderAdapter):
 
         tool_name = parsed_arguments.get("title", "")
         if tool_name != output_model.__name__:
-            cls.logger.debug(
-                f"Wrong schema name in response, "
-                f"expected {output_model.__name__} got {tool_name}"
-            )
+            cls.logger.debug(f"Wrong schema name in response, expected {output_model.__name__} got {tool_name}")
 
         try:
             validated_model = output_model(**parsed_arguments)
             cls.logger.debug("Validation successful.")
             return validated_model
         except ValidationError as e:
-            cls.logger.debug(f"Validation failed: {str(e)}")
+            cls.logger.debug(f"Validation failed: {e!s}")
             return None

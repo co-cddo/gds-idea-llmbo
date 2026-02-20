@@ -18,11 +18,11 @@ ModelAdapterRegistry.register(r"(anthropic|claude)", AnthropicAdapter)
 ModelAdapterRegistry.register(r"(mistral|mixtral)", MistralAdapter)
 
 __all__ = [
-    "__version__",
-    "Manifest",
-    "ToolChoice",
-    "ModelInput",
     "BatchInferer",
-    "StructuredBatchInferer",
+    "Manifest",
     "ModelAdapterRegistry",
+    "ModelInput",
+    "StructuredBatchInferer",
+    "ToolChoice",
+    "__version__",
 ]

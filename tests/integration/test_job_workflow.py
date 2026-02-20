@@ -29,9 +29,7 @@ def test_create_fail_http_error(
     sample_inputs: dict[str, ModelInput],
 ):
     """Test failure when HTTP error is returned."""
-    batch_inferer.client.create_model_invocation_job.return_value = {
-        "ResponseMetadata": {"HTTPStatusCode": 400}
-    }
+    batch_inferer.client.create_model_invocation_job.return_value = {"ResponseMetadata": {"HTTPStatusCode": 400}}
 
     batch_inferer.prepare_requests(sample_inputs)
 
@@ -42,9 +40,7 @@ def test_create_fail_http_error(
         batch_inferer.create()
 
 
-def test_create_fail_no_response(
-    batch_inferer: BatchInferer, sample_inputs: dict[str, ModelInput]
-):
+def test_create_fail_no_response(batch_inferer: BatchInferer, sample_inputs: dict[str, ModelInput]):
     """Test failure when no response is returned."""
     batch_inferer.client.create_model_invocation_job.return_value = None
 
@@ -57,9 +53,7 @@ def test_create_fail_no_response(
         batch_inferer.create()
 
 
-def test_complete_workflow(
-    batch_inferer: BatchInferer, sample_inputs: dict[str, ModelInput]
-):
+def test_complete_workflow(batch_inferer: BatchInferer, sample_inputs: dict[str, ModelInput]):
     """Test the complete workflow from preparation to downloading results."""
     # Setup for success
     batch_inferer.prepare_requests(sample_inputs)

@@ -23,9 +23,7 @@ class ModelProviderAdapter(ABC):
 
     @classmethod
     @abstractmethod
-    def prepare_model_input(
-        cls, model_input: ModelInput, output_model: type[BaseModel] | None = None
-    ) -> ModelInput:
+    def prepare_model_input(cls, model_input: ModelInput, output_model: type[BaseModel] | None = None) -> ModelInput:
         """Prepare model input with provider-specific configurations.
 
         Args:
@@ -54,9 +52,7 @@ class ModelProviderAdapter(ABC):
         raise NotImplementedError(f"{cls.__name__} does not support tool definitions.")
 
     @classmethod
-    def validate_result(
-        cls, result: dict[str, Any], output_model: type[BaseModel]
-    ) -> BaseModel | None:
+    def validate_result(cls, result: dict[str, Any], output_model: type[BaseModel]) -> BaseModel | None:
         """Parse and validate model output.
 
         Args:
@@ -71,12 +67,8 @@ class ModelProviderAdapter(ABC):
             NotImplementedError: If structured output validation is not supported
                                 but output_model is provided
         """
-        cls.logger.error(
-            f"{cls.__name__} does not support structured output validation"
-        )
-        raise NotImplementedError(
-            f"{cls.__name__} does not support structured output validation."
-        )
+        cls.logger.error(f"{cls.__name__} does not support structured output validation")
+        raise NotImplementedError(f"{cls.__name__} does not support structured output validation.")
 
 
 class DefaultAdapter(ModelProviderAdapter):
@@ -90,9 +82,7 @@ class DefaultAdapter(ModelProviderAdapter):
     _logged_default_warning = False
 
     @classmethod
-    def prepare_model_input(
-        cls, model_input: ModelInput, output_model: type[BaseModel] | None = None
-    ) -> ModelInput:
+    def prepare_model_input(cls, model_input: ModelInput, output_model: type[BaseModel] | None = None) -> ModelInput:
         """Default implementation just returns the input unchanged.
 
         Args:

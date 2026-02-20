@@ -28,9 +28,7 @@ def test_init(mock_boto3_session: MagicMock):
     assert bi.adapter is AnthropicAdapter
 
     # Test S3 bucket check was called
-    mock_boto3_session.return_value.client("s3").head_bucket.assert_called_once_with(
-        Bucket=inputs["bucket_name"]
-    )
+    mock_boto3_session.return_value.client("s3").head_bucket.assert_called_once_with(Bucket=inputs["bucket_name"])
 
     # Test IAM role check was called
     mock_boto3_session.return_value.client("iam").get_role.assert_called_once_with(
@@ -75,9 +73,7 @@ def test_init_unsupported_model(mock_boto3_session: MagicMock | AsyncMock):
     assert bi.adapter is DefaultAdapter
 
 
-def test_prepare_requests(
-    batch_inferer: BatchInferer, sample_inputs: dict[str, ModelInput]
-):
+def test_prepare_requests(batch_inferer: BatchInferer, sample_inputs: dict[str, ModelInput]):
     """Test that requests are prepared."""
     batch_inferer.prepare_requests(sample_inputs)
 
@@ -85,19 +81,13 @@ def test_prepare_requests(
     assert list(batch_inferer.requests[0].keys()) == ["recordId", "modelInput"]
     assert batch_inferer.requests[0]["recordId"] == "000"
     assert "anthropic_version" in batch_inferer.requests[0]["modelInput"]
-    assert all(
-        [isinstance(request["modelInput"], dict) for request in batch_inferer.requests]
-    )
+    assert all([isinstance(request["modelInput"], dict) for request in batch_inferer.requests])
 
 
-def test_prepare_requests_bad_batch_size(
-    batch_inferer: BatchInferer, sample_inputs: dict[str, ModelInput]
-):
+def test_prepare_requests_bad_batch_size(batch_inferer: BatchInferer, sample_inputs: dict[str, ModelInput]):
     """Test that an error is raised for batch size < 100."""
     small_inputs = dict(list(sample_inputs.items())[:50])
-    with pytest.raises(
-        ValueError, match=f"Minimum Batch Size is 100, {len(small_inputs)} given"
-    ):
+    with pytest.raises(ValueError, match=f"Minimum Batch Size is 100, {len(small_inputs)} given"):
         batch_inferer.prepare_requests(small_inputs)
 
 

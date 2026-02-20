@@ -86,9 +86,7 @@ class StructuredBatchInferer(BatchInferer):
         """
         self.output_model = output_model
 
-        self.logger.info(
-            f"Initialized StructuredBatchInferer with {output_model.__name__} schema"
-        )
+        self.logger.info(f"Initialized StructuredBatchInferer with {output_model.__name__} schema")
 
         super().__init__(
             model_name=model_name,
@@ -135,9 +133,7 @@ class StructuredBatchInferer(BatchInferer):
         self.logger.info(f"Adding tool {self.output_model.__name__} to model input")
         self._check_input_length(inputs)
         for id, model_input in inputs.items():
-            inputs[id] = self.adapter.prepare_model_input(
-                model_input, self.output_model
-            )
+            inputs[id] = self.adapter.prepare_model_input(model_input, self.output_model)
 
         self.requests = self._to_requests(inputs)
 
@@ -163,9 +159,7 @@ class StructuredBatchInferer(BatchInferer):
         self.instances = [
             {
                 "recordId": result["recordId"],
-                "outputModel": self.adapter.validate_result(
-                    result["modelOutput"], self.output_model
-                ),
+                "outputModel": self.adapter.validate_result(result["modelOutput"], self.output_model),
             }
             if result.get("modelOutput")
             else None
@@ -190,8 +184,7 @@ class StructuredBatchInferer(BatchInferer):
             NotImplementedError: Always raised when called.
         """
         raise NotImplementedError(
-            "Cannot recover structured job without output_model. "
-            "Use recover_structured_job instead."
+            "Cannot recover structured job without output_model. Use recover_structured_job instead."
         )
 
     @classmethod
@@ -237,9 +230,7 @@ class StructuredBatchInferer(BatchInferer):
             # Extract required parameters from response
             job_name = response["jobName"]
             model_id = response["modelId"]
-            bucket_name = response["inputDataConfig"]["s3InputDataConfig"][
-                "s3Uri"
-            ].split("/")[2]
+            bucket_name = response["inputDataConfig"]["s3InputDataConfig"]["s3Uri"].split("/")[2]
             role_arn = response["roleArn"]
 
             # Validate required files exist
@@ -267,8 +258,8 @@ class StructuredBatchInferer(BatchInferer):
             return sbi
 
         except (KeyError, IndexError) as e:
-            cls.logger.error(f"Invalid job response format: {str(e)}")
-            raise ValueError(f"Invalid job response format: {str(e)}") from e
+            cls.logger.error(f"Invalid job response format: {e!s}")
+            raise ValueError(f"Invalid job response format: {e!s}") from e
         except Exception as e:
-            cls.logger.error(f"Failed to recover job details: {str(e)}")
-            raise RuntimeError(f"Failed to recover job details: {str(e)}") from e
+            cls.logger.error(f"Failed to recover job details: {e!s}")
+            raise RuntimeError(f"Failed to recover job details: {e!s}") from e

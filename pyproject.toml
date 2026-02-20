@@ -56,6 +56,25 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 addopts = "-v --cov=llmbo"
 
+[tool.ruff]
+line-length = 120
+exclude = ["src/llmbo/_version.py"]
+
+[tool.ruff.lint]
+select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # pyflakes
+    "I",      # isort
+    "UP",     # pyupgrade (modern Python syntax)
+    "B",      # flake8-bugbear
+    "SIM",    # flake8-simplify
+    "RUF",    # ruff-specific rules
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["llmbo"]
+
 [[tool.uv.index]]
 name = "llmbo-bedrock"
 url = "https://upload.pypi.org/legacy/?llmbo-bedrock"

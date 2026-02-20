@@ -36,15 +36,11 @@ def mock_bedrock_client():
         "status": "Completed",
         "jobName": "test-job",
         "modelId": "anthropic.claude-3-haiku-20240307-v1:0",
-        "inputDataConfig": {
-            "s3InputDataConfig": {"s3Uri": "s3://test-bucket/input/test.jsonl"}
-        },
+        "inputDataConfig": {"s3InputDataConfig": {"s3Uri": "s3://test-bucket/input/test.jsonl"}},
         "roleArn": "arn:aws:iam::123456789012:role/TestRole",
     }
 
-    mock_client.stop_model_invocation_job.return_value = {
-        "ResponseMetadata": {"HTTPStatusCode": 200}
-    }
+    mock_client.stop_model_invocation_job.return_value = {"ResponseMetadata": {"HTTPStatusCode": 200}}
 
     return mock_client
 

@@ -1,6 +1,7 @@
 import logging
 import re
 from re import Pattern
+from typing import ClassVar
 
 from .adapters.base import DefaultAdapter, ModelProviderAdapter
 
@@ -17,7 +18,7 @@ class ModelAdapterRegistry:
         >>> ModelAdapterRegistry.register("my-custom-model", MyCustomAdapter)
     """
 
-    _adapters: list[tuple[Pattern, type[ModelProviderAdapter]]] = []
+    _adapters: ClassVar[list[tuple[Pattern, type[ModelProviderAdapter]]]] = []
     logger = logging.getLogger(__name__)
 
     @classmethod
@@ -33,32 +34,22 @@ class ModelAdapterRegistry:
         """
         # Add type validation to ensure adapter_class is a proper ModelProviderAdapter
         if not issubclass(adapter_class, ModelProviderAdapter):
-            cls.logger.error(
-                f"Adapter class must be a subclass of ModelProviderAdapter, "
-                f"got {adapter_class.__name__}"
-            )
-            raise TypeError(
-                f"Adapter class must be a subclass of ModelProviderAdapter, "
-                f"got {adapter_class.__name__}"
-            )
+            cls.logger.error(f"Adapter class must be a subclass of ModelProviderAdapter, got {adapter_class.__name__}")
+            raise TypeError(f"Adapter class must be a subclass of ModelProviderAdapter, got {adapter_class.__name__}")
 
         compiled_pattern = re.compile(pattern)
 
         # Check for duplicate pattern and log a warning
         for i, (existing_pattern, _) in enumerate(cls._adapters):
             if existing_pattern.pattern == compiled_pattern.pattern:
-                cls.logger.warning(
-                    f"Adapter for pattern '{pattern}' is being replaced with {adapter_class.__name__}"
-                )
+                cls.logger.warning(f"Adapter for pattern '{pattern}' is being replaced with {adapter_class.__name__}")
                 # Remove the existing adapter with the same pattern
                 cls._adapters.pop(i)
                 break
 
         # Add new adapter to the beginning of the list for higher precedence
         cls._adapters.insert(0, (compiled_pattern, adapter_class))
-        cls.logger.info(
-            f"Registered adapter {adapter_class.__name__} for pattern '{pattern}'"
-        )
+        cls.logger.info(f"Registered adapter {adapter_class.__name__} for pattern '{pattern}'")
 
     @classmethod
     def get_adapter(cls, model_name: str) -> type[ModelProviderAdapter]:
