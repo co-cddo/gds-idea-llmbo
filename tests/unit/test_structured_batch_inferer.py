@@ -33,3 +33,31 @@ def test_structured_init(mock_boto3_session: MagicMock):
     assert bi.results is None
     assert bi.manifest is None
     assert bi.requests is None
+
+
+def test_structured_init_default_output_dir(mock_boto3_session: MagicMock):
+    """Test StructuredBatchInferer defaults output_dir to current directory."""
+    sbi = StructuredBatchInferer(
+        output_model=ExampleOutput,
+        model_name="test-supported-claude-model",
+        bucket_name="test-bucket",
+        region="test-region",
+        job_name="test-job",
+        role_arn="arn:aws:iam::123456789012:role/TestRole",
+    )
+    assert sbi.output_dir == "."
+
+
+def test_structured_init_custom_output_dir(mock_boto3_session: MagicMock):
+    """Test StructuredBatchInferer passes output_dir through to BatchInferer."""
+    sbi = StructuredBatchInferer(
+        output_model=ExampleOutput,
+        model_name="test-supported-claude-model",
+        bucket_name="test-bucket",
+        region="test-region",
+        job_name="test-job",
+        role_arn="arn:aws:iam::123456789012:role/TestRole",
+        output_dir="structured_outputs",
+    )
+    assert sbi.output_dir == "structured_outputs"
+    assert sbi._local_path("foo.jsonl") == "structured_outputs/foo.jsonl"

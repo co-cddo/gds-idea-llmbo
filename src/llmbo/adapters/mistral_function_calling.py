@@ -49,9 +49,7 @@ class MistralFunctionAdapter(ModelProviderAdapter):
         return tool
 
     @classmethod
-    def prepare_model_input(
-        cls, model_input: ModelInput, output_model: type[BaseModel] | None = None
-    ) -> ModelInput:
+    def prepare_model_input(cls, model_input: ModelInput, output_model: type[BaseModel] | None = None) -> ModelInput:
         """Prepare model input for Mistral models.
 
         Args:
@@ -75,9 +73,7 @@ class MistralFunctionAdapter(ModelProviderAdapter):
         return model_input
 
     @classmethod
-    def validate_result(
-        cls, result: dict[str, Any], output_model: type[BaseModel]
-    ) -> BaseModel | None:
+    def validate_result(cls, result: dict[str, Any], output_model: type[BaseModel]) -> BaseModel | None:
         """Validate and parse output from Mistral models.
 
         Extracts structured data from Mistral's tool-use response format and
@@ -116,9 +112,7 @@ class MistralFunctionAdapter(ModelProviderAdapter):
         # Check its the tool we think it is
         tool_name = tools[0].get("function", {}).get("name", "")
         if tool_name != output_model.__name__:
-            cls.logger.debug(
-                f"Wrong tool encountered, expected {output_model.__name__} got {tool_name}."
-            )
+            cls.logger.debug(f"Wrong tool encountered, expected {output_model.__name__} got {tool_name}.")
             return None
 
         try:
@@ -132,5 +126,5 @@ class MistralFunctionAdapter(ModelProviderAdapter):
             validated_model = output_model(**parsed_arguments)
             return validated_model
         except ValidationError as e:
-            cls.logger.debug(f"Validation failed: {str(e)}")
+            cls.logger.debug(f"Validation failed: {e!s}")
             return None

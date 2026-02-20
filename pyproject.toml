@@ -1,6 +1,6 @@
 [project]
 name = "llmbo-bedrock"
-version = "0.2.2"
+dynamic = ["version"]
 description = "Large Language Model Batch Operations"
 readme = "docs/README.md"
 authors = [
@@ -21,8 +21,14 @@ Issues = "https://github.com/co-cddo/gds-idea-llmbo/issues"
 # Changelog = "https://github.com/me/spam/blob/master/CHANGELOG.md"
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.build.hooks.vcs]
+version-file = "src/llmbo/_version.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/llmbo"]
@@ -33,6 +39,7 @@ dev = [
     "mypy>=1.15.0",
     "pytest>=8.3.4",
     "pytest-cov>=6.0.0",
+    "ruff>=0.9.0",
     "twine>=6.1.0",
 ]
 docs = [
@@ -48,6 +55,25 @@ where = ["src"]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 addopts = "-v --cov=llmbo"
+
+[tool.ruff]
+line-length = 120
+exclude = ["src/llmbo/_version.py"]
+
+[tool.ruff.lint]
+select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # pyflakes
+    "I",      # isort
+    "UP",     # pyupgrade (modern Python syntax)
+    "B",      # flake8-bugbear
+    "SIM",    # flake8-simplify
+    "RUF",    # ruff-specific rules
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["llmbo"]
 
 [[tool.uv.index]]
 name = "llmbo-bedrock"

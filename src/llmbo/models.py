@@ -2,10 +2,18 @@ import json
 from dataclasses import dataclass
 from typing import Literal
 
+from pydantic import BaseModel, ConfigDict
 
-@dataclass
-class Manifest:
-    """Job manifest details."""
+
+class Manifest(BaseModel):
+    """Job manifest details.
+
+    Uses ``extra="allow"`` so that new fields returned by the AWS Bedrock API
+    (e.g. ``inputAudioSecond``) are captured in ``model_extra`` instead of
+    raising ``TypeError``.
+    """
+
+    model_config = ConfigDict(extra="allow")
 
     totalRecordCount: int
     processedRecordCount: int

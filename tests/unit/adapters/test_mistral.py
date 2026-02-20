@@ -49,9 +49,7 @@ def test_prepare_model_input_with_tool():
 
 def test_prepare_model_input_with_system():
     SYSTEM = "SHOULD BE MOVED"
-    model_input = ModelInput(
-        messages=[{"role": "user", "content": "Test"}], system=SYSTEM
-    )
+    model_input = ModelInput(messages=[{"role": "user", "content": "Test"}], system=SYSTEM)
     result = MistralAdapter.prepare_model_input(model_input, ExampleOutput)
 
     assert result.system is None
@@ -81,7 +79,7 @@ def test_validate_result_valid():
                 "finish_reason": "stop",
                 "message": {
                     "role": "assistant",
-                    "content": 'Here is the JSON object you requested: {"name": "John Doe", "age": 30, "title": "ExampleOutput"}',
+                    "content": 'Here is the JSON object you requested: {"name": "John Doe", "age": 30, "title": "ExampleOutput"}',  # noqa: E501
                 },
             }
         ],
@@ -236,7 +234,7 @@ def test_validate_result_with_markdown_json(caplog):
                 "finish_reason": "stop",
                 "message": {
                     "role": "assistant",
-                    "content": 'Here\'s the JSON object:\n\n```json\n{"name": "John Doe", "age": 30}\n```\n\nHope this helps!',
+                    "content": 'Here\'s the JSON object:\n\n```json\n{"name": "John Doe", "age": 30}\n```\n\nHope this helps!',  # noqa: E501
                 },
             }
         ],

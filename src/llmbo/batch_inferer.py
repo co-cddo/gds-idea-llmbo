@@ -60,6 +60,7 @@ class BatchInferer:
         role_arn: str,
         time_out_duration_hours: int = 24,
         session: boto3.Session | None = None,
+        output_dir: str = ".",
     ):
         """Initialize a BatchInferer for AWS Bedrock batch processing.
 
@@ -77,6 +78,9 @@ class BatchInferer:
                 Defaults to 24 hours.
             session (boto3.session, optional): A boto3 session to be used for AWS calls,
                 If one if not provided a new one will be created
+            output_dir (str, optional): Directory for local JSONL files (input, output,
+                manifest). Defaults to "." (current working directory). The directory
+                is created if it does not exist.
 
         Raises:
             KeyError: If AWS_PROFILE environment variable is not set
@@ -114,6 +118,8 @@ class BatchInferer:
         self.file_name = job_name + ".jsonl"
         self.output_file_name = None
         self.manifest_file_name = None
+        self.output_dir = output_dir
+        os.makedirs(self.output_dir, exist_ok=True)
 
         self.check_for_profile()
         self._check_arn(role_arn)
@@ -145,6 +151,10 @@ class BatchInferer:
             self.logger.error("Job ARN not set")
             raise ValueError("Job ARN not set")
         return self.job_arn.split("/")[-1]
+
+    def _local_path(self, bare_name: str) -> str:
+        """Join output_dir with a bare filename for local file operations."""
+        return os.path.join(self.output_dir, bare_name)
 
     def check_for_profile(self) -> None:
         """Checks if a profile has been set.
@@ -209,12 +219,10 @@ class BatchInferer:
 
         if (bucket_region := self._get_bucket_location(bucket_name)) != region:
             self.logger.error(
-                f"Bucket {bucket_name} is not located in the same region [{region}] "
-                f"as the llm [{bucket_region}]"
+                f"Bucket {bucket_name} is not located in the same region [{region}] as the llm [{bucket_region}]"
             )
             raise ValueError(
-                f"Bucket {bucket_name} is not located in the same region [{region}] "
-                f"as the llm [{bucket_region}]"
+                f"Bucket {bucket_name} is not located in the same region [{region}] as the llm [{bucket_region}]"
             )
 
     def _check_arn(self, role_arn: str) -> bool:
@@ -343,8 +351,8 @@ class BatchInferer:
             - Internal method used by push_requests_to_s3()
             - Will overwrite existing files with the same name
         """
-        self.logger.info(f"Writing {len(self.requests)} requests to {self.file_name}")
-        with open(self.file_name, "w") as file:
+        self.logger.info(f"Writing {len(self.requests)} requests to {self._local_path(self.file_name)}")
+        with open(self._local_path(self.file_name), "w") as file:
             for record in self.requests:
                 file.write(json.dumps(record) + "\n")
 
@@ -373,7 +381,7 @@ class BatchInferer:
         s3_client = self.session.client("s3")
         self.logger.info(f"Pushing {len(self.requests)} requests to {self.bucket_name}")
         response = s3_client.upload_file(
-            Filename=self.file_name,
+            Filename=self._local_path(self.file_name),
             Bucket=self.bucket_name,
             Key=f"input/{self.file_name}",
             ExtraArgs={"ContentType": "application/json"},
@@ -430,20 +438,14 @@ class BatchInferer:
                     return response
                 else:
                     self.logger.error(
-                        f"There was an error creating the job {self.job_name},"
-                        " non 200 response from bedrock"
+                        f"There was an error creating the job {self.job_name}, non 200 response from bedrock"
                     )
                     raise RuntimeError(
-                        f"There was an error creating the job {self.job_name},"
-                        " non 200 response from bedrock"
+                        f"There was an error creating the job {self.job_name}, non 200 response from bedrock"
                     )
             else:
-                self.logger.error(
-                    "There was an error creating the job, no response from bedrock"
-                )
-                raise RuntimeError(
-                    "There was an error creating the job, no response from bedrock"
-                )
+                self.logger.error("There was an error creating the job, no response from bedrock")
+                raise RuntimeError("There was an error creating the job, no response from bedrock")
         else:
             self.logger.error("There were no prepared requests")
             raise AttributeError("There were no prepared requests")
@@ -470,27 +472,23 @@ class BatchInferer:
             file_name_, ext = os.path.splitext(self.file_name)
             self.output_file_name = f"{file_name_}_out{ext}"
             self.manifest_file_name = f"{file_name_}_manifest{ext}"
-            self.logger.info(
-                f"Job:{self.job_arn} Complete. Downloading results from {self.bucket_name}"
-            )
+            self.logger.info(f"Job:{self.job_arn} Complete. Downloading results from {self.bucket_name}")
             s3_client = self.session.client("s3")
             s3_client.download_file(
                 Bucket=self.bucket_name,
                 Key=f"output/{self.unique_id_from_arn}/{self.file_name}.out",
-                Filename=self.output_file_name,
+                Filename=self._local_path(self.output_file_name),
             )
-            self.logger.info(f"Downloaded results file to {self.output_file_name}")
+            self.logger.info(f"Downloaded results file to {self._local_path(self.output_file_name)}")
 
             s3_client.download_file(
                 Bucket=self.bucket_name,
                 Key=f"output/{self.unique_id_from_arn}/manifest.json.out",
-                Filename=self.manifest_file_name,
+                Filename=self._local_path(self.manifest_file_name),
             )
-            self.logger.info(f"Downloaded manifest file to {self.manifest_file_name}")
+            self.logger.info(f"Downloaded manifest file to {self._local_path(self.manifest_file_name)}")
         else:
-            self.logger.info(
-                f"Job:{self.job_arn} was not marked one of {VALID_FINISHED_STATUSES}, could not download."
-            )
+            self.logger.info(f"Job:{self.job_arn} was not marked one of {VALID_FINISHED_STATUSES}, could not download.")
 
     def load_results(self) -> None:
         """Load batch inference results and manifest from local files.
@@ -510,18 +508,14 @@ class BatchInferer:
             - Must call download_results() before calling this method
             - The manifest provides useful metrics like success rate and token counts
         """
-        if os.path.isfile(self.output_file_name) and os.path.isfile(
-            self.manifest_file_name
+        if os.path.isfile(self._local_path(self.output_file_name)) and os.path.isfile(
+            self._local_path(self.manifest_file_name)
         ):
-            self.results = self._read_jsonl(self.output_file_name)
-            self.manifest = Manifest(**self._read_jsonl(self.manifest_file_name)[0])
+            self.results = self._read_jsonl(self._local_path(self.output_file_name))
+            self.manifest = Manifest(**self._read_jsonl(self._local_path(self.manifest_file_name))[0])
         else:
-            self.logger.error(
-                "Result files do not exist, you may need to call .download_results() first."
-            )
-            raise FileExistsError(
-                "Result files do not exist, you may need to call .download_results() first."
-            )
+            self.logger.error("Result files do not exist, you may need to call .download_results() first.")
+            raise FileExistsError("Result files do not exist, you may need to call .download_results() first.")
 
     def cancel_batch(self) -> None:
         """Cancel a running batch inference job.
@@ -542,9 +536,7 @@ class BatchInferer:
         response = self.client.stop_model_invocation_job(jobIdentifier=self.job_arn)
 
         if response["ResponseMetadata"]["HTTPStatusCode"] == 200:
-            self.logger.info(
-                f"Job {self.job_name} with id={self.job_arn} was cancelled"
-            )
+            self.logger.info(f"Job {self.job_name} with id={self.job_arn} was cancelled")
             self.job_status = "Stopped"
         else:
             self.logger.error(
@@ -610,7 +602,11 @@ class BatchInferer:
 
     @classmethod
     def recover_details_from_job_arn(
-        cls, job_arn: str, region: str, session: boto3.Session | None = None
+        cls,
+        job_arn: str,
+        region: str,
+        session: boto3.Session | None = None,
+        output_dir: str = ".",
     ) -> "BatchInferer":
         """Recover a BatchInferer instance from an existing job ARN.
 
@@ -622,6 +618,7 @@ class BatchInferer:
             region: (str) the region where the job was scheduled
             session (boto3.session, optional): A boto3 session to be used for calls to AWS,
                     If one if not provided a new one will be  created
+            output_dir (str, optional): Directory for local JSONL files. Defaults to ".".
 
         Returns:
             BatchInferer: A configured instance with the job's details
@@ -643,13 +640,11 @@ class BatchInferer:
             # Extract required parameters from response
             job_name = response["jobName"]
             model_id = response["modelId"]
-            bucket_name = response["inputDataConfig"]["s3InputDataConfig"][
-                "s3Uri"
-            ].split("/")[2]
+            bucket_name = response["inputDataConfig"]["s3InputDataConfig"]["s3Uri"].split("/")[2]
             role_arn = response["roleArn"]
 
             # Validate required files exist
-            input_file = f"{job_name}.jsonl"
+            input_file = os.path.join(output_dir, f"{job_name}.jsonl")
             if not os.path.exists(input_file):
                 cls.logger.error(f"Required input file not found: {input_file}")
                 raise FileNotFoundError(f"Required input file not found: {input_file}")
@@ -663,6 +658,7 @@ class BatchInferer:
                 bucket_name=bucket_name,
                 role_arn=role_arn,
                 session=session,
+                output_dir=output_dir,
             )
             bi.job_arn = job_arn
             bi.requests = requests
@@ -671,16 +667,14 @@ class BatchInferer:
             return bi
 
         except (KeyError, IndexError) as e:
-            cls.logger.error(f"Invalid job response format: {str(e)}")
-            raise ValueError(f"Invalid job response format: {str(e)}") from e
+            cls.logger.error(f"Invalid job response format: {e!s}")
+            raise ValueError(f"Invalid job response format: {e!s}") from e
         except Exception as e:
-            cls.logger.error(f"Failed to recover job details: {str(e)}")
-            raise RuntimeError(f"Failed to recover job details: {str(e)}") from e
+            cls.logger.error(f"Failed to recover job details: {e!s}")
+            raise RuntimeError(f"Failed to recover job details: {e!s}") from e
 
     @classmethod
-    def check_for_existing_job(
-        cls, job_arn, region, session: boto3.Session | None = None
-    ) -> dict[str, Any]:
+    def check_for_existing_job(cls, job_arn, region, session: boto3.Session | None = None) -> dict[str, Any]:
         """Check if a job exists and return its details.
 
         Args:
@@ -708,15 +702,11 @@ class BatchInferer:
             if e.response["Error"]["Code"] == "ResourceNotFoundException":
                 cls.logger.error(f"Job not found: {job_arn}")
                 raise ValueError(f"Job not found: {job_arn}") from e
-            cls.logger.error(f"AWS API error: {str(e)}")
-            raise RuntimeError(f"AWS API error: {str(e)}") from e
+            cls.logger.error(f"AWS API error: {e!s}")
+            raise RuntimeError(f"AWS API error: {e!s}") from e
 
         if response["ResponseMetadata"]["HTTPStatusCode"] != 200:
-            cls.logger.error(
-                f"Unexpected response status: {response['ResponseMetadata']['HTTPStatusCode']}"
-            )
-            raise RuntimeError(
-                f"Unexpected response status: {response['ResponseMetadata']['HTTPStatusCode']}"
-            )
+            cls.logger.error(f"Unexpected response status: {response['ResponseMetadata']['HTTPStatusCode']}")
+            raise RuntimeError(f"Unexpected response status: {response['ResponseMetadata']['HTTPStatusCode']}")
 
         return response

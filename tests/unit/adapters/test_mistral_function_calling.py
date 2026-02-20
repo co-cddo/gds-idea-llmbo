@@ -195,9 +195,7 @@ def test_validate_result_wrong_tool(caplog):
         result = MistralFunctionAdapter.validate_result(invalid_result, ExampleOutput)
 
     assert result is None
-    assert (
-        "Wrong tool encountered, expected ExampleOutput got WrongName." in caplog.text
-    )
+    assert "Wrong tool encountered, expected ExampleOutput got WrongName." in caplog.text
 
 
 def test_validate_result_invalid_json(caplog):

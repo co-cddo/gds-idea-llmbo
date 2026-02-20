@@ -33,9 +33,7 @@ class AnthropicAdapter(ModelProviderAdapter):
         return tool
 
     @classmethod
-    def prepare_model_input(
-        cls, model_input: ModelInput, output_model: type[BaseModel] | None = None
-    ) -> ModelInput:
+    def prepare_model_input(cls, model_input: ModelInput, output_model: type[BaseModel] | None = None) -> ModelInput:
         """Prepare model input for Anthropic Claude models."""
         cls.logger.debug("Preparing model input for Anthropic Claude")
 
@@ -54,9 +52,7 @@ class AnthropicAdapter(ModelProviderAdapter):
         return model_input
 
     @classmethod
-    def validate_result(
-        cls, result: dict[str, Any], output_model: type[BaseModel]
-    ) -> BaseModel | None:
+    def validate_result(cls, result: dict[str, Any], output_model: type[BaseModel]) -> BaseModel | None:
         """Validate and parse output from Anthropic Claude models."""
         cls.logger.debug(f"Validating result against {output_model.__name__} schema")
 
@@ -73,9 +69,7 @@ class AnthropicAdapter(ModelProviderAdapter):
         # Check that there's exactly one tool call
         tool_use_items = [item for item in content if item.get("type") == "tool_use"]
         if len(tool_use_items) != 1:
-            cls.logger.debug(
-                f"Expected exactly 1 tool_use item, found {len(tool_use_items)}"
-            )
+            cls.logger.debug(f"Expected exactly 1 tool_use item, found {len(tool_use_items)}")
             return None
 
         # Process the single tool use response
@@ -83,10 +77,8 @@ class AnthropicAdapter(ModelProviderAdapter):
         try:
             # Parse tool use input as our output model
             instance = output_model(**tool_use["input"])
-            cls.logger.debug(
-                f"Successfully validated result as {output_model.__name__}"
-            )
+            cls.logger.debug(f"Successfully validated result as {output_model.__name__}")
             return instance
         except ValidationError as e:
-            cls.logger.debug(f"Validation failed: {str(e)}")
+            cls.logger.debug(f"Validation failed: {e!s}")
             return None

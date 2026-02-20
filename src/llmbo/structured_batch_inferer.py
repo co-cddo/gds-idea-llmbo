@@ -41,6 +41,7 @@ class StructuredBatchInferer(BatchInferer):
         role_arn: str,
         time_out_duration_hours: int = 24,
         session: boto3.Session | None = None,
+        output_dir: str = ".",
     ):
         """Initialize a StructuredBatchInferer for schema-validated batch processing.
 
@@ -56,7 +57,9 @@ class StructuredBatchInferer(BatchInferer):
             job_name (str): Unique identifier for this batch job
             role_arn (str): AWS IAM role ARN with permissions for Bedrock and S3 access
             time_out_duration_hours (int): Number of hours before the job times out
-            session (boto3.Session, optional): A boto3 session to be used for AWS API calls. If not provided, a new session will be created.
+            session (boto3.Session, optional): A boto3 session to be used for AWS API calls.
+                If not provided, a new session will be created.
+            output_dir (str, optional): Directory for local JSONL files. Defaults to ".".
 
         Raises:
             KeyError: If AWS_PROFILE environment variable is not set
@@ -83,9 +86,7 @@ class StructuredBatchInferer(BatchInferer):
         """
         self.output_model = output_model
 
-        self.logger.info(
-            f"Initialized StructuredBatchInferer with {output_model.__name__} schema"
-        )
+        self.logger.info(f"Initialized StructuredBatchInferer with {output_model.__name__} schema")
 
         super().__init__(
             model_name=model_name,
@@ -95,6 +96,7 @@ class StructuredBatchInferer(BatchInferer):
             role_arn=role_arn,
             time_out_duration_hours=time_out_duration_hours,
             session=session,
+            output_dir=output_dir,
         )
 
     def prepare_requests(self, inputs: dict[str, ModelInput]):
@@ -131,9 +133,7 @@ class StructuredBatchInferer(BatchInferer):
         self.logger.info(f"Adding tool {self.output_model.__name__} to model input")
         self._check_input_length(inputs)
         for id, model_input in inputs.items():
-            inputs[id] = self.adapter.prepare_model_input(
-                model_input, self.output_model
-            )
+            inputs[id] = self.adapter.prepare_model_input(model_input, self.output_model)
 
         self.requests = self._to_requests(inputs)
 
@@ -159,9 +159,7 @@ class StructuredBatchInferer(BatchInferer):
         self.instances = [
             {
                 "recordId": result["recordId"],
-                "outputModel": self.adapter.validate_result(
-                    result["modelOutput"], self.output_model
-                ),
+                "outputModel": self.adapter.validate_result(result["modelOutput"], self.output_model),
             }
             if result.get("modelOutput")
             else None
@@ -174,6 +172,7 @@ class StructuredBatchInferer(BatchInferer):
         job_arn: str,
         region: str,
         session: boto3.Session | None = None,
+        output_dir: str = ".",
     ) -> "StructuredBatchInferer":
         """Placeholder method for interface consistency.
 
@@ -185,8 +184,7 @@ class StructuredBatchInferer(BatchInferer):
             NotImplementedError: Always raised when called.
         """
         raise NotImplementedError(
-            "Cannot recover structured job without output_model. "
-            "Use recover_structured_job instead."
+            "Cannot recover structured job without output_model. Use recover_structured_job instead."
         )
 
     @classmethod
@@ -196,6 +194,7 @@ class StructuredBatchInferer(BatchInferer):
         region: str,
         output_model: type[BaseModel],
         session: boto3.Session | None = None,
+        output_dir: str = ".",
     ) -> "StructuredBatchInferer":
         """Recover a StructuredBatchInferer instance from an existing job ARN.
 
@@ -205,9 +204,10 @@ class StructuredBatchInferer(BatchInferer):
         Args:
             job_arn: (str) The AWS ARN of the existing batch inference job
             region: (str) the region where the job was scheduled
-            output_model: (Type[BaseModel]) A pydantic model describing the required output
+            output_model: (type[BaseModel]) A pydantic model describing the required output
             session (boto3.Session, optional): A boto3 session to be used for AWS API calls.
-                                           If not provided, a new session will be created.
+                                            If not provided, a new session will be created.
+            output_dir (str, optional): Directory for local JSONL files. Defaults to ".".
 
         Returns:
             StructuredBatchInferer: A configured instance with the job's details
@@ -218,7 +218,7 @@ class StructuredBatchInferer(BatchInferer):
         Example:
             >>> job_arn = "arn:aws:bedrock:region:account:job/xyz123"
             >>> region = us-east-1"
-            >>> sbi = StructuredBatchInferer.recover_details_from_job_arn(job_arn, region, some_model)
+            >>> sbi = StructuredBatchInferer.recover_structured_job(job_arn, region, some_model)
             >>> sbi.check_complete()
             'Completed'
         """
@@ -230,13 +230,11 @@ class StructuredBatchInferer(BatchInferer):
             # Extract required parameters from response
             job_name = response["jobName"]
             model_id = response["modelId"]
-            bucket_name = response["inputDataConfig"]["s3InputDataConfig"][
-                "s3Uri"
-            ].split("/")[2]
+            bucket_name = response["inputDataConfig"]["s3InputDataConfig"]["s3Uri"].split("/")[2]
             role_arn = response["roleArn"]
 
             # Validate required files exist
-            input_file = f"{job_name}.jsonl"
+            input_file = os.path.join(output_dir, f"{job_name}.jsonl")
             if not os.path.exists(input_file):
                 cls.logger.error(f"Required input file not found: {input_file}")
                 raise FileNotFoundError(f"Required input file not found: {input_file}")
@@ -251,6 +249,7 @@ class StructuredBatchInferer(BatchInferer):
                 bucket_name=bucket_name,
                 role_arn=role_arn,
                 session=session,
+                output_dir=output_dir,
             )
             sbi.job_arn = job_arn
             sbi.requests = requests
@@ -259,8 +258,8 @@ class StructuredBatchInferer(BatchInferer):
             return sbi
 
         except (KeyError, IndexError) as e:
-            cls.logger.error(f"Invalid job response format: {str(e)}")
-            raise ValueError(f"Invalid job response format: {str(e)}") from e
+            cls.logger.error(f"Invalid job response format: {e!s}")
+            raise ValueError(f"Invalid job response format: {e!s}") from e
         except Exception as e:
-            cls.logger.error(f"Failed to recover job details: {str(e)}")
-            raise RuntimeError(f"Failed to recover job details: {str(e)}") from e
+            cls.logger.error(f"Failed to recover job details: {e!s}")
+            raise RuntimeError(f"Failed to recover job details: {e!s}") from e
