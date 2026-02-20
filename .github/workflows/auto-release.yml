@@ -49,9 +49,11 @@ jobs:
         with:
           version: "latest"
 
-      - name: Create local tag
+      - name: Create and push tag
         if: steps.check.outputs.skip == 'false'
-        run: git tag "${{ steps.version.outputs.tag }}"
+        run: |
+          git tag "${{ steps.version.outputs.tag }}"
+          git push origin "${{ steps.version.outputs.tag }}"
 
       - name: Build package
         if: steps.check.outputs.skip == 'false'
@@ -62,14 +64,8 @@ jobs:
         run: |
           gh release create "${{ steps.version.outputs.tag }}" \
             --title "${{ steps.version.outputs.tag }}" \
-            --generate-notes
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload release artifacts
-        if: steps.check.outputs.skip == 'false'
-        run: |
-          gh release upload "${{ steps.version.outputs.tag }}" dist/*
+            --generate-notes \
+            dist/*
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
