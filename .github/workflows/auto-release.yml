@@ -43,7 +43,21 @@ jobs:
           echo "Next tag: $NEXT_TAG"
           echo "tag=$NEXT_TAG" >> "$GITHUB_OUTPUT"
 
-      - name: Create tag and release
+      - name: Install uv
+        if: steps.check.outputs.skip == 'false'
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+
+      - name: Create local tag
+        if: steps.check.outputs.skip == 'false'
+        run: git tag "${{ steps.version.outputs.tag }}"
+
+      - name: Build package
+        if: steps.check.outputs.skip == 'false'
+        run: uv build
+
+      - name: Create release
         if: steps.check.outputs.skip == 'false'
         run: |
           gh release create "${{ steps.version.outputs.tag }}" \
@@ -51,16 +65,6 @@ jobs:
             --generate-notes
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Install uv
-        if: steps.check.outputs.skip == 'false'
-        uses: astral-sh/setup-uv@v5
-        with:
-          version: "latest"
-
-      - name: Build package
-        if: steps.check.outputs.skip == 'false'
-        run: uv build
 
       - name: Upload release artifacts
         if: steps.check.outputs.skip == 'false'
